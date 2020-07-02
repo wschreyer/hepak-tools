@@ -51,7 +51,7 @@ The module provides the same functions that are available in Excel when using th
 
 ## HE3PAK interface
 
-The HE3PAK interface provides a Python interface to the [HE3PAK DLL library](http://www.htess.com/he3pak.htm). It works out-of-the-box on Windows, but should in principle work on Linux as well with the zugbruecke package (not tested).
+he3pak.py provides a Python interface to the [HE3PAK DLL library](http://www.htess.com/he3pak.htm). It works out-of-the-box on Windows, but should in principle work on Linux as well with the zugbruecke package (not tested).
 
 The module provides five functions calculating various properties of He3, see the module for all available properties:
 
@@ -121,16 +121,16 @@ example.py demonstrates the use of all the functions provided by both interfaces
 
 ## UCN-source model
 
-Provides a model of the He3 fridge for the new UCN source at TRIUMF. It does a scan of all experimental parameters and plots the resulting temperatures and flows in the fridge. Requires SciPy to solve the model equations and matplotlib to plot the results.
+UCNsource.py provides a model of the He3 fridge for the new UCN source at TRIUMF. It does a scan of all experimental parameters and plots the resulting temperatures and flows in the fridge. Requires SciPy to solve the model equations and matplotlib to plot the results.
 
 ### Supplemental data
 
-The folder HEXdata contains He3 boiling curves from [Maeda, et al; Cryogenics 40 (2000) 713-719)](https://doi.org/10.1016/S0011-2275(01)00002-9) and [Tanaka and Kodama; Cryogenics 29 (1989) 203](https://doi.org/10.1016/0011-2275(89)90085-4). This data is interpolated to model He3 boiling in the UCN fridge.
+The folder HEXdata contains He3 boiling curves from [Maeda, et al; Cryogenics 40 (2000) 713-719](https://doi.org/10.1016/S0011-2275(01)00002-9) and [Tanaka and Kodama; Cryogenics 29 (1989) 203-205](https://doi.org/10.1016/0011-2275(89)90085-4). This data is interpolated to model He3 boiling in the UCN fridge.
 
 It also contains results of simulations of several heat exchangers in the fridge provided by [T. Okamura](https://kds.kek.jp/indico/event/31409/contributions/117125/attachments/91366/108628/report_TOkamura_KEK_20190624.pdf) for reference.
 
 ## Model of counter-flow heat exchanger HEX7
 
-Provides a model for a tube-in-tube counter-flow heat exchanger, similar to 'HEX7' in the fridge for the new UCN source at TRIUMF. It also includes an extension to a tube-in-tube-in-tube heat exchanger that can be used for a liquid-nitrogen-bath-cooled gas purifier. It cools the incoming flow to liquid nitrogen temperature using the return flow and the evaporated liquid nitrogen.
+HEX7.py provides a model for a tube-in-tube counter-flow heat exchanger, similar to 'HEX7' in the fridge for the new UCN source at TRIUMF. It also includes an extension to a tube-in-tube-in-tube heat exchanger that can be used for a liquid-nitrogen-bath-cooled gas purifier. It cools the incoming flow to liquid nitrogen temperature using the return flow and the evaporated liquid nitrogen.
 
 Requires SciPy to numerically solve the boundary-value problem and matplotlib to plot the results. Also uses [CoolProp](http://www.coolprop.org/) to calculate nitrogen-gas properties and, optionally, as an interface to helium-gas properties faster than the HEPAK Excel Add-In.
