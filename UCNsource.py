@@ -24,7 +24,7 @@ def He3CoolingLoad(flow, pressure, inletTemperature, outletTemperature):
   inletEnthalpy = he3pak.He3Prop(6, inletDensity, inletTemperature)
   outletDensity = he3pak.He3Density(pressure, outletTemperature)
   outletEnthalpy = he3pak.He3Prop(6, outletDensity, outletTemperature)
-  return flow*(inletEnthalpy - outletDensity) # heat load on 1K pot = He3 gas flow * He3 enthalpy difference
+  return flow*(inletEnthalpy - outletEnthalpy) # heat load on 1K pot = He3 gas flow * He3 enthalpy difference
 
 # calculate evaporation rate of helium reservoir when flowing He3 through it (assuming He3 is cooled to reservoir temperature)
 def HeReservoirEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IPPressure, IPInletTemperature, reservoirPressure):
@@ -99,17 +99,18 @@ def loadHe3boilingData():
         TQdata.append([T, float(line[1])*10000.]) # data for heat flux is in W/cm2, convert to W/m2		
         dTdata.append(float(line[0]))
   spline = scipy.interpolate.LinearNDInterpolator(TQdata, dTdata, rescale = True)
+  nearest = scipy.interpolate.NearestNDInterpolator(TQdata, dTdata, rescale = True)
   T, q = numpy.meshgrid(numpy.linspace(0.5, 2.1), numpy.logspace(-2, 4))
-  dT = numpy.vectorize(spline)(T, q)
+  h = numpy.divide(q, numpy.vectorize(spline)(T, q))
   fig, ax = plt.subplots(1, 1)
-  im = ax.pcolormesh(T, q, dT, cmap = 'hsv', norm = matplotlib.colors.LogNorm())
+  im = ax.pcolormesh(T, q, h, cmap = 'hsv', norm = matplotlib.colors.LogNorm())
   ax.set_yscale('log')
   ax.set_xlabel('Temperature (K)')
   ax.set_ylabel(r'Heat flux (W/m$^{2}$)')
   zax = fig.colorbar(im, ax = ax)
-  zax.set_label('Temperature difference (K)')
+  zax.set_label(r'Heat transfer coefficient (W/m$^{2}$ K)')
   plt.savefig('He3boiling.pdf')
-  return spline
+  return spline, nearest
 
 
 # calculate temperature of HEX1 by interpolating measured He3 boiling curve
@@ -121,10 +122,10 @@ def HEX1Temperature(T_He3, HEX1length, HEX1diameter, finHeight, finPitch, heatLo
   area = HEX1diameter*math.pi*HEX1length/2 + (HEX1diameter + 2*finHeight)*math.pi*HEX1length/2 + ((HEX1diameter/2 + finHeight)**2 - (HEX1diameter/2)**2)*math.pi*numberFins*2
   q = heatLoad/area
   
-  dT = He3boilingData(T_He3, q)
+  dT = He3boilingData[0](T_He3, q)
   if math.isnan(dT):
     print('He3 temperature outside valid boiling temperature range!')
-    return T_He3
+    dT = He3boilingData[1](T_He3, q)
   return T_He3 + dT
 
   
@@ -201,16 +202,17 @@ def calcUCNSource(parameters):
   result['T_3He'] = He3Temperature(result['3He flow'], parameters['3He pumping speed']['value'], parameters['Pump inlet temperature']['value'], parameters['3He pressure drop']['value'])
   heatLoad = parameters['Beam heating']['value'] + parameters['Static heat']['value'] + HeCoolingLoad(parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'], result['1K pot temperature'], result['T_4He'])
   result['T_Cu'] = HEX1Temperature(result['T_3He'], parameters['HEX1 length']['value'], parameters['Channel diameter']['value'], parameters['HEX1 fin height']['value'], parameters['HEX1 fin pitch']['value'], heatLoad)
-#  result['T_4He'] = He4Temperature(result['T_Cu'], parameters['HEX1 length']['value'], parameters['Channel diameter']['value'], parameters['Beam heating']['value'] + parameters['Static heat']['value'])
-  if result['T_4He'] < hepak.HeConst(3):
+  if parameters['Beam heating']['value'] == 0.:
+    result['T_HeII'] = result['T_4He']
+  elif result['T_4He'] < hepak.HeConst(3):
     print('T_4He {0:.3g} outside HEPAK range!'.format(result['T_4He']))
     result['HeII vapor pressure'] = 0.
     result['HeII pressure head'] = 0.
     result['T_HeII'] = 0.
-    return result
-  result['HeII vapor pressure'] = hepak.HeCalc('P', 0, 'T', result['T_4He'], 'SL', 0., 1)
-  result['HeII pressure head'] = hepak.HeCalc('D', 0, 'T', result['T_4He'], 'SL', 0., 1)*9.81*parameters['HeII overfill']['value']
-  result['T_HeII'] = HeIItemperature(parameters['Channel length']['value'], result['T_4He'], result['HeII vapor pressure'] + result['HeII pressure head'], parameters['Beam heating']['value'], parameters['Channel diameter']['value'])
+  else:
+    result['HeII vapor pressure'] = hepak.HeCalc('P', 0, 'T', result['T_4He'], 'SL', 0., 1)
+    result['HeII pressure head'] = hepak.HeCalc('D', 0, 'T', result['T_4He'], 'SL', 0., 1)*9.81*parameters['HeII overfill']['value']
+    result['T_HeII'] = HeIItemperature(parameters['Channel length']['value'], result['T_4He'], result['HeII vapor pressure'] + result['HeII pressure head'], parameters['Beam heating']['value'], parameters['Channel diameter']['value'])
   return result
 
 
@@ -218,7 +220,7 @@ parameters = {
 '3He pumping speed':				{'value': 5000.0,	'range': (300., 10000.), 	'unit': r'm$^{3}$/h'},
 'He pumping speed':					{'value': 2000.,	'range': (500., 5000.), 	'unit': r'm$^{3}$/h'},
 'Pump inlet temperature':			{'value': 290.,		'range': (100., 300.), 		'unit': 'K'},
-'3He inlet pressure': 				{'value': 50000.,	'range': (50000., 100000.), 'unit': 'Pa'},
+'3He inlet pressure': 				{'value': 50000.,	'range': (20000., 100000.), 'unit': 'Pa'},
 'Beam heating': 					{'value': 8.1,		'range': (0., 10.), 		'unit': 'W'}, # Beam on
 #'Beam heating': 					{'value': 0.,		'range': (0., 1.), 			'unit': 'W'}, # Beam off
 'Static heat': 						{'value': 1., 		'range': (0.1, 2.),         'unit': 'W'},
@@ -226,15 +228,15 @@ parameters = {
 #'3He pressure drop': 				{'value': 20000., 	'range': (0., 50000.), 		'unit': 'Pa'}, # Standby mode
 'He pressure drop': 				{'value': 200., 	'range': (0., 1000.), 		'unit': 'Pa'},
 #'He pressure drop': 				{'value': 10000., 	'range': (0., 10000.), 		'unit': 'Pa'}, # Standby mode
-'Channel diameter': 				{'value': 0.148, 	'range': (0.1, 0.2), 		'unit': 'm'},
+'Channel diameter': 				{'value': 0.148, 	'range': (0.12, 0.2), 		'unit': 'm'},
 'Channel length': 					{'value': 2.5, 		'range': (1., 4.), 			'unit': 'm'},
-'HEX1 length': 						{'value': 0.6, 		'range': (0.1, 0.6), 		'unit': 'm'},
+'HEX1 length': 						{'value': 0.6, 		'range': (0.1, 0.8), 		'unit': 'm'},
 'HEX1 fin height': 					{'value': 0.001, 	'range': (0., 0.003), 		'unit': 'm'},
 'HEX1 fin pitch': 					{'value': 0.002, 	'range': (0.0005, 0.005), 	'unit': 'm'},
-'HeII overfill': 					{'value': 0.05, 	'range': (0.01, 0.2), 		'unit': 'm'},
+'HeII overfill': 					{'value': 0.05, 	'range': (0.02, 0.2), 		'unit': 'm'},
 'He reservoir pressure': 			{'value': 1.2e5, 	'range': (900e2, 1500e2), 	'unit': 'Pa'},
 '1K pot inlet temperature': 		{'value': 2.8, 		'range': (2., 4.), 			'unit': 'K'},
-'He reservoir inlet temperature': 	{'value': 8., 		'range': (6., 12.,), 		'unit': 'K'},
+'He reservoir inlet temperature': 	{'value': 10., 		'range': (6., 12.,), 		'unit': 'K'},
 'Isopure He flow':					{'value': 0.,		'range': (0., 0.),			'unit': 'kg/s'},
 #'Isopure He flow':                  {'value': 0.00014,  'range': (0., 0.0005),      'unit': 'kg/s'}, # isopure condensation
 'Isopure He inlet temperature':     {'value': 20.,      'range': (10., 40.),        'unit': 'K'},
@@ -248,19 +250,19 @@ print('He reservoir evaporation: {0:.4g} g/s'.format(result['He reservoir flow']
 print('1K pot: {0:.4} K, {1:.4g} g/s'.format(result['1K pot temperature'], result['1K pot flow']*1000))
 print('He consumption: {0:.3g} L/h'.format(result['He consumption']))
 print('Required shield flows: {0:.3g} g/s, {1:.3g} g/s'.format(result['20K shield flow']*1000, result['100K shield flow']*1000))
-print('He-II pressure: {0:.4g} + {1:.4g} Pa'.format(result['HeII vapor pressure'], result['HeII pressure head']))
+#print('He-II pressure: {0:.4g} + {1:.4g} Pa'.format(result['HeII vapor pressure'], result['HeII pressure head']))
 print('T: {0:.4g} -> {1:.4g} -> {2:.4g} -> {3:.4g} K'.format(result['T_3He'], result['T_Cu'], result['T_4He'], result['T_HeII']))
 
 # scan parameter ranges and plot temperatures and flows
 plotRows = 4
 plotCols = 5
-fig, axes = plt.subplots(plotRows, plotCols, figsize=(20,16))
+fig, axes = plt.subplots(plotRows, plotCols, figsize=(plotCols*5,plotRows*5))
 axes2 = axes.copy()
 fig.set_tight_layout(True)
 for i, p in enumerate(parameters):
   params = {}
   for pp in parameters:
-    params[pp] = dict(parameters[pp])
+    params[pp] = dict(parameters[pp]) # make copy of original parameter set that we can modify
   print(p)
   x = []
   y = []
@@ -290,22 +292,27 @@ for i, p in enumerate(parameters):
       y9.append(res['T_Cu'])
   ax = axes[i % plotRows][int(i/plotRows)]
   axes[0][0].get_shared_y_axes().join(axes[0][0], ax)
-  ax.plot(x, y, color = 'tab:green')
-  ax.plot(x, y5, color = 'tab:orange')
-  ax.plot(x, y6, color = 'tab:olive')
-  ax.plot(x, y7, color = 'tab:cyan')
+  ax.plot(x, y, color = 'tab:green', label = 'He reservoir')
+  ax.plot(x, y6, color = 'tab:olive', label = '1K pot')
+  ax.plot(x, y7, color = 'tab:cyan', label = 'Req. for shields')
+  ax.plot(x, y5, color = 'tab:orange', label = '3He')
   ax.set_xlabel(p + ' (' + params[p]['unit'] + ')')
   ax.set_ylabel('Gas flow (g/s)')
 
   axes2[i % plotRows][int(i/plotRows)] = ax.twinx()
   ax2 = axes2[i % plotRows][int(i/plotRows)]
   axes2[0][0].get_shared_y_axes().join(axes2[0][0], ax2)
-  ax2.plot(x, y2, color = 'tab:blue')
-  ax2.plot(x, y3, color = 'tab:red')
-  ax2.plot(x, y4, color = 'tab:purple')
-  ax2.plot(x, y8, color = 'tab:pink')
-  ax2.plot(x, y9, color = 'tab:gray')
+  ax2.plot(x, y8, color = 'tab:pink', label = '1K pot')
+  ax2.plot(x, y3, color = 'tab:red', label = '3He')
+  ax2.plot(x, y9, color = 'tab:gray', label = 'HEX1')
+  ax2.plot(x, y4, color = 'tab:purple', label = '4He at HEX1')
+  ax2.plot(x, y2, color = 'tab:blue', label = '4He in bottle')
   ax2.set_ylabel('Temperature (K)')
+  
+  plt.axvline(parameters[p]['value'], 0, 1, color = 'k', dashes = (4, 2))
+  if i == 9:
+    ax.legend(title = 'Flows', loc = 'upper left')
+    ax2.legend(title = 'Temperatures', loc = 'upper right')
   
 while True:
   try:
