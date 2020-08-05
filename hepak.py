@@ -102,3 +102,18 @@ def HeProperty(property):
 # input2: integer 0..40
 def HeValidate(input1, input2):
   return xl.Application.Run('HeValidate', input1, input2)
+
+
+def HeSaturatedPressure(temperature):
+  P = HeCalc('P', 0, 'T', temperature, 'SV', 0, 1)
+  if P == 'NUM':
+    return 0.
+  else:
+    return P
+  
+def HeSaturatedTemperature(pressure):
+  T = HeCalc('T', 0, 'P', pressure, 'SV', 0, 1)
+  if T == 'NUM':
+    return 0.
+  else:
+    return T
