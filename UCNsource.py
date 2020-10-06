@@ -35,11 +35,11 @@ def HeReservoirEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IP
   
 # calculate required flow to cool 20K and 100K shields, with additional heat load by isopure He flowing over shields
 # static heat loads on shields are assumed fixed
-def shieldFlow(IPFlow, IPPressure, inletPressure):
-  IPHeatLoad_100 = HeCoolingLoad(IPFlow, IPPressure, 300., 100.)
-  IPHeatLoad_20 = HeCoolingLoad(IPFlow, IPPressure, 100., 20.)
-  flow_20 = HeCoolingFlow(4.3 + 0.7 + 1.1 + 2. + 6.6 + IPHeatLoad_20, inletPressure, 10., 20.)
-  flow_100 = HeCoolingFlow(49. + 8.9 + 5.7 + 14. + IPHeatLoad_100, inletPressure, 30., 100.)
+def shieldFlow(temp20K, temp100K, inlet20K, inlet100K, isopureFlow, isopurePressure):
+  IPHeatLoad_100 = HeCoolingLoad(isopureFlow, isopurePressure, 300., temp100K)
+  IPHeatLoad_20 = HeCoolingLoad(isopureFlow, isopurePressure, temp100K, temp20K)
+  flow_20 = HeCoolingFlow(4.3 + 0.7 + 1.1 + 2. + 6.6 + IPHeatLoad_20, isopurePressure, inlet20K, temp20K)
+  flow_100 = HeCoolingFlow(49. + 8.9 + 5.7 + 14. + IPHeatLoad_100, isopurePressure, inlet100K, temp100K)
   return flow_20, flow_100
 
 pumpData = pumpdata.loadPumpData('pumpdata/Busch_2stage_He3_torqueControl.csv')
@@ -88,7 +88,7 @@ def He3Temperature(He3Flow, pumpingPressureDrop):
 #  if not inletPressure.converged:
 #    print('Could not determine pump inlet pressure')
 #  pumpInletPressure = He3Flow*specificGasConstant*pumpInletTemperature/(pumpingSpeed/3600) # P = dm/dt R_s T / (dV/dt)
-  pumpInletPressure = scipy.optimize.root_scalar(lambda P: pumpData(P)*2. - He3Flow, bracket = (15., 12000.)) # find inlet presure for given flow in pump data (using two parallel pumps with performance scaled by 75% to He3)
+  pumpInletPressure = scipy.optimize.root_scalar(lambda P: pumpData(P)*2. - He3Flow, bracket = (15., 12000.)) # find inlet presure for given flow in pump data (using two parallel pumps)
   if not pumpInletPressure.converged:
     print("Could not calculate He3 pump inlet pressure!")
 
@@ -120,40 +120,64 @@ def He4Temperature(T_Cu, HEX1length, HEX1diameter, heatLoad):
 #  return (T_Cu**3.46 + heatLoad/A/460.)**(1./3.46) # for polished/oxidized Cu, see van Sciver table 7.4
 
 
-# calculate temperature profile of He-II in conduction channel from Gorter-Mellink equation
-def HeIItemperature(x, T_low, pressure, heatLoad, channelDiameter):
-  if heatLoad == 0.:
-    return T_low, T_low
-	
-  A = math.pi*channelDiameter**2/4.
+# calculate temperature profile according to Gorter-Mellink equation, starting at temperature T_low
+# along channel with given length and diameter, filled with He-II at given pressure and transporting given heat load
+# conductivity is either calculated using 'HEPAK' or 'VanSciver'
+# returns interpolation function for temperature profile
+def GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, conductivityModel):
+  A = math.pi/4.*channelDiameter**2
   
   def dTdx(x, T):
+    if heatLoad == 0:
+      return 0.
     if T[0] < hepak.HeConst(3):
       print('T_4He {0:.3g} outside HEPAK range!'.format(T[0]))
       return 0.
-    k = hepak.HeCalc(38, 0, 'P', pressure, 'T', T[0], 1) # heat conductivity from HEPAK
-    if k > 0:
-      return (heatLoad/A)**3 / k
-    else:
-      print('Conductivity <= 0!')
-      return 0.
-	  
-  def dTdx2(x, T):
-    if T[0] < hepak.HeConst(3):
-      print('T_4He {0:.3g} outside HEPAK range!'.format(T[0]))
-      return 0.
-    g_lambda = hepak.HeCalc('D', 0, 'P', pressure, 'T', T[0], 1)**2 * 1559.**4 * hepak.HeConst(9)**3 / 1450.
-    f_inverse = g_lambda * ((T[0]/hepak.HeConst(9))**5.7 * (1 - (T[0]/hepak.HeConst(9))**5.7))**3 # heat conductivity from vanSciver
-    return (heatLoad/A)**3 / f_inverse
-	  
-  result = scipy.integrate.solve_ivp(dTdx, (0., x), [T_low]) # integrate ODE dT/dx = (q/A)^3 / k(T)
-  result2 = scipy.integrate.solve_ivp(dTdx2, (0., x), [T_low])
+    
+    if conductivityModel == 'HEPAK':
+      k = hepak.HeCalc(38, 0, 'P', pressure, 'T', T[0], 1) # heat conductivity from HEPAK
+      if k > 0:
+        return (heatLoad/A)**3 / k
+      else:
+        print('HEPAK conductivity <= 0!')
+        return 0.
+    elif conductivityModel == 'VanSciver':	  
+      g_lambda = hepak.HeCalc('D', 0, 'P', pressure, 'T', T[0], 1)**2 * 1559.**4 * hepak.HeConst(9)**3 / 1450.
+      f_inverse = g_lambda * ((T[0]/hepak.HeConst(9))**5.7 * (1 - (T[0]/hepak.HeConst(9))**5.7))**3 # heat conductivity from vanSciver
+      return (heatLoad/A)**3 / f_inverse
   
-  channelVolume = A*x
+  result = scipy.integrate.solve_ivp(dTdx, (0., channelLength), [T_low], dense_output = True) # integrate ODE dT/dx = (q/A)^3 / k(T)
+  if not result.success:
+    print(result.message)
+  return result.sol
+ 
+
+def printSegmentedTemperature(T_low, pressure, heatLoad, channelDiameter, channelLength, conductivityModel, segmentLength, YoshikiParameter):
+  profile = GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, conductivityModel)
+
+  A = math.pi/4.*channelDiameter**2
   bottleVolume = 0.034
-  meanTemperature = (numpy.mean(result.y[0])*channelVolume + result.y[0][-1]*bottleVolume)/(channelVolume + bottleVolume)
-  meanLifetime = (numpy.mean(numpy.reciprocal(numpy.power(result.y[0], 7)))/0.016 * channelVolume + 1./result.y[0][-1]**7/0.016 * bottleVolume)/(channelVolume + bottleVolume)
-  return result.y[0][-1], result2.y[0][-1], meanTemperature, meanLifetime
+  temperatureVolumeIntegral = scipy.integrate.quad(lambda x: profile(x)[0], 0., channelLength)[0]*A + profile(channelLength)[0]*bottleVolume
+  meanTemperature = temperatureVolumeIntegral/(channelLength*A + bottleVolume)
+  lifetimeVolumeIntegral = scipy.integrate.quad(lambda x: 1./(YoshikiParameter*profile(x)[0]**7), 0., channelLength)[0]*A + 1./(YoshikiParameter*profile(channelLength)[0]**7)*bottleVolume
+  meanLifetime = lifetimeVolumeIntegral/(channelLength*A + bottleVolume)
+  print('Mean: {0:.3f} K, {1:.1f} s'.format(meanTemperature, meanLifetime))
+
+  x = 0.
+  while x < channelLength:
+    meanLifetime = scipy.integrate.quad(lambda y: 1./(YoshikiParameter*profile(y)[0]**7), x, x + segmentLength)[0]/segmentLength
+    print('{0:.2f}m: {1:.3f}K, {2:.1f}s, {3:.3g}neV'.format(x + segmentLength/2., \
+                                                scipy.integrate.quad(lambda y: profile(y)[0], x, x + segmentLength)[0]/segmentLength, \
+                                                meanLifetime, 0.5*6.582e-16/meanLifetime*1e9))
+    x = x + segmentLength
+
+
+# calculate temperature profile of He-II in conduction channel from Gorter-Mellink equation
+def HeIItemperature(channelLength, T_low, pressure, heatLoad, channelDiameter):
+  profileHEPAK = GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, 'HEPAK')
+  profileVanSciver = GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, 'VanSciver')
+  
+  return profileHEPAK(channelLength)[0], profileVanSciver(channelLength)[0]
 
 
 # x: [3He flow, 1K pot temperature, 4He temperature at HEX1]
@@ -189,11 +213,11 @@ def calcUCNSource(parameters):
                                              parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'], result['He reservoir temperature'], \
 											 parameters['He reservoir pressure']['value'], parameters['HEX5 exit temperature']['value'], result['1K pot temperature'])
   result['He reservoir flow'] = HeReservoirEvaporation(result['3He flow'], parameters['3He inlet pressure']['value'], parameters['He reservoir inlet temperature']['value'], \
-                                                       parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'], parameters['Isopure He inlet temperature']['value'], \
+                                                       parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'], parameters['20K shield temperature']['value'], \
 													   parameters['He reservoir pressure']['value'])
   result['He consumption'] = (result['He reservoir flow'] + result['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600
-  result['20K shield flow'] = shieldFlow(parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'], parameters['He reservoir pressure']['value'])[0]
-  result['100K shield flow'] = shieldFlow(parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'], parameters['He reservoir pressure']['value'])[1]
+  result['20K shield flow'], result['100K shield flow'] = shieldFlow(parameters['20K shield temperature']['value'], parameters['100K shield temperature']['value'], parameters['20K shield inlet temperature']['value'], \
+                                                                     parameters['100K shield inlet temperature']['value'], parameters['Isopure He flow']['value'], parameters['Isopure He pressure']['value'])
   result['Shield consumption'] = max(result['20K shield flow'], result['100K shield flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600
  
   result['T_3He'] = He3Temperature(result['3He flow'], parameters['3He pressure drop']['value'])
@@ -202,7 +226,7 @@ def calcUCNSource(parameters):
 
   result['HeII vapor pressure'] = 0.
   result['HeII pressure head'] = 0.
-  result['T_HeII'] = result['T_4He'], result['T_4He'], result['T_4He'], 1./result['T_4He']**7/0.016
+  result['T_HeII'] = result['T_4He'], result['T_4He']
   if parameters['Beam heating']['value'] > 0. and result['T_4He'] > hepak.HeConst(3):
     result['HeII vapor pressure'] = hepak.HeCalc('P', 0, 'T', result['T_4He'], 'SL', 0., 1)
     result['HeII pressure head'] = hepak.HeCalc('D', 0, 'T', result['T_4He'], 'SL', 0., 1)*9.81*parameters['HeII overfill']['value']
@@ -212,8 +236,8 @@ def calcUCNSource(parameters):
 
 parameters = {
 'Beam heating': 					{'value': 8.1,		'range': (0., 10.), 		'unit': 'W'}, # Beam on
-#'Beam heating': 					{'value': 0.,		'range': (0., 1.), 			'unit': 'W'}, # Beam off
-'Static heat': 						{'value': 1., 		'range': (0.1, 2.),         'unit': 'W'},
+#'Beam heating': 					{'value': 0.,		'range': (0., 0.), 			'unit': 'W'}, # Beam off
+'Static heat': 						{'value': 1., 		'range': (0.5, 2.),         'unit': 'W'},
 #'3He pumping speed':				{'value': 4300.,	'range': (300., 10000.), 	'unit': r'm$^{3}$/h'}, # 1.14g/s @ 5.85 torr (Busch proposal)
 #'He pumping speed':					{'value': 2000.,	'range': (500., 5000.), 	'unit': r'm$^{3}$/h'}, # 1.2g/s @ 9.9 torr (Busch proposal)
 #'Pump inlet temperature':			{'value': 290.,		'range': (100., 300.), 		'unit': 'K'},
@@ -225,17 +249,20 @@ parameters = {
 'HEX4 exit temperature':			{'value': 2.8,		'range': (2., 3.5),			'unit': 'K'},
 'HEX5 exit temperature':			{'value': 2.8,		'range': (2., 3.5),			'unit': 'K'},
 #'1K pot inlet temperature': 		{'value': 2.8, 		'range': (2., 3.5),			'unit': 'K'},
-'3He inlet pressure': 				{'value': 50000.,	'range': (20000., 100000.), 'unit': 'Pa'},
+'3He inlet pressure': 				{'value': 50000.,	'range': (30000., 80000.), 'unit': 'Pa'},
 'Channel diameter': 				{'value': 0.148, 	'range': (0.12, 0.2), 		'unit': 'm'},
 'Channel length': 					{'value': 2.5, 		'range': (1., 4.), 			'unit': 'm'},
 'HEX1 length': 						{'value': 0.6, 		'range': (0.1, 0.8), 		'unit': 'm'},
 'HEX1 surface': 					{'value': 1.67,	 	'range': (0.21, 2.),		'unit': r'm$^{2}$/m'},
 'HeII overfill': 					{'value': 0.05, 	'range': (0.02, 0.2), 		'unit': 'm'},
-'He reservoir pressure': 			{'value': 1.2e5, 	'range': (900e2, 1500e2), 	'unit': 'Pa'},
+'He reservoir pressure': 			{'value': 1.2e5, 	'range': (700e2, 1300e2), 	'unit': 'Pa'},
 'Isopure He flow':					{'value': 0.,		'range': (0., 0.),			'unit': 'kg/s'},
-#'Isopure He flow':                  {'value': 0.00014,  'range': (0., 0.0005),      'unit': 'kg/s'}, # isopure condensation
-'Isopure He inlet temperature':     {'value': 20.,      'range': (10., 40.),        'unit': 'K'},
-'Isopure He pressure':              {'value': 100e2,    'range': (10e2, 500e2),     'unit': 'Pa'}
+#'Isopure He flow':                  {'value': 0.00014/3,  'range': (0., 0.0002),      'unit': 'kg/s'}, # isopure condensation
+'Isopure He pressure':              {'value': 100e2,    'range': (10e2, 500e2),     'unit': 'Pa'},
+'20K shield inlet temperature':		{'value': 8.,		'range': (5., 15.),			'unit': 'K'},
+'20K shield temperature':			{'value': 22.,		'range': (15., 30.),		'unit': 'K'},
+'100K shield inlet temperature':	{'value': 30.,		'range': (20., 40.),		'unit': 'K'},
+'100K shield temperature':			{'value': 90.,		'range': (80., 120.),		'unit': 'K'},
 }
 
 result = calcUCNSource(parameters)
@@ -243,15 +270,17 @@ result = calcUCNSource(parameters)
 print('3He flow: {0:.4g} g/s'.format(result['3He flow']*1000))
 print('He reservoir evaporation: {0:.4g} g/s'.format(result['He reservoir flow']*1000))
 print('1K pot: {0:.4} K, {1:.4g} g/s'.format(result['1K pot temperature'], result['1K pot flow']*1000))
-print('He consumption: {0:.3g} L/h'.format(result['He consumption']))
+print('He consumption: {0:.3g} L/h'.format((max(result['He reservoir flow'], result['20K shield flow'], result['100K shield flow']) + result['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600))
 print('Required shield flows: {0:.3g} g/s, {1:.3g} g/s'.format(result['20K shield flow']*1000, result['100K shield flow']*1000))
 #print('He-II pressure: {0:.4g} + {1:.4g} Pa'.format(result['HeII vapor pressure'], result['HeII pressure head']))
 print('T: {0:.4g} -> {1:.4g} -> {2:.4g} -> {3[0]:.4g} to {3[1]:.4g} K'.format(result['T_3He'], result['T_Cu'], result['T_4He'], result['T_HeII']))
-print('UCN lifetime: {0:.4g}'.format(result['T_HeII'][3]))
+printSegmentedTemperature(result['T_4He'], result['HeII vapor pressure'] + result['HeII pressure head'], parameters['Beam heating']['value'], parameters['Channel diameter']['value'], parameters['Channel length']['value'], 'HEPAK', 0.1, 0.016)
+
+#quit()
 
 # scan parameter ranges and plot temperatures and flows
-plotRows = 3
-plotCols = 6
+plotRows = 4
+plotCols = 5
 fig, axes = plt.subplots(plotRows, plotCols, figsize=(plotCols*5,plotRows*5))
 axes2 = axes.copy()
 axes3 = axes.copy()
@@ -270,16 +299,15 @@ for i, p in enumerate(parameters):
   y5 = []
   y6 = []
   y7 = []
+  y72 = []
   y8 = []
   y9 = []
-  y10 = []
   for j in range(11):
     value = params[p]['range'][0] + float(j)/10.*(params[p]['range'][1] - params[p]['range'][0])
-    print(value, params[p]['unit'])
     params[p]['value'] = value
     res = calcUCNSource(params)
     if res:
-      print((res['He reservoir flow'] + res['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1000e2, 'SL', 0, 1)*1000.*3600., 'L/h')
+      print(value, params[p]['unit'], ':', (max(res['He reservoir flow'], res['20K shield flow'], res['100K shield flow']) + res['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600, 'L/h')
       x.append(params[p]['value'])
       y.append(res['He reservoir flow']*1000)
       y2.append(res['T_HeII'][0])
@@ -288,15 +316,16 @@ for i, p in enumerate(parameters):
       y4.append(res['T_4He'])
       y5.append(res['3He flow']*1000)
       y6.append(res['1K pot flow']*1000)
-      y7.append(max(res['20K shield flow'], res['100K shield flow'])*1000)
+      y7.append(res['20K shield flow']*1000)
+      y72.append(res['100K shield flow'] * 1000)
       y8.append(res['1K pot temperature'])
       y9.append(res['T_Cu'])
-      y10.append(res['T_HeII'][3])
   ax = axes[i % plotRows][int(i/plotRows)]
   axes[0][0].get_shared_y_axes().join(axes[0][0], ax)
   ax.plot(x, y, color = 'tab:green', label = 'He reservoir')
   ax.plot(x, y6, color = 'tab:olive', label = '1K pot')
-  ax.plot(x, y7, color = 'tab:cyan', label = 'Req. for shields')
+  ax.plot(x, y7, color = 'tab:cyan', label = '20K shields')
+  ax.plot(x, y72, color = 'darkcyan', label = '100K shields')
   ax.plot(x, y5, color = 'tab:orange', label = '3He')
   ax.set_xlabel(p + ' (' + params[p]['unit'] + ')')
   ax.set_ylabel('Gas flow (g/s)')
@@ -310,12 +339,6 @@ for i, p in enumerate(parameters):
   ax2.plot(x, y4, color = 'tab:purple', label = '4He at HEX1')
   ax2.fill_between(x, y2, y2_2, color = 'tab:blue', label = '4He in bottle', alpha = 0.2)
   ax2.set_ylabel('Temperature (K)')
-  
-#  axes3[i % plotRows][int(i/plotRows)] = ax.twinx()
-#  ax3 = axes3[i % plotRows][int(i/plotRows)]
-#  axes3[0][0].get_shared_y_axes().join(axes3[0][0], ax3)
-#  ax3.set_ylim(10., 60.)
-#  ax3.plot(x, y10, color = 'tab:brown', label = 'UCN lifetime')
   
   plt.axvline(parameters[p]['value'], 0, 1, color = 'k', dashes = (4, 2))
   if i == 9:
