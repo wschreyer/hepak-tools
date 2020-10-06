@@ -47,7 +47,13 @@ import atexit
 
 pwd = os.path.abspath(os.path.dirname(sys.argv[0]))
 
-xl = win32com.client.gencache.EnsureDispatch('Excel.Application')
+try:
+  xl = win32com.client.gencache.EnsureDispatch('Excel.Application')
+except AttributeError as err:
+  print(err)
+  print(r'Try clearing contents of C:\Users\<username>\AppData\Local\Temp\gen_py to fix this error')
+  quit()
+  
 print('Loading HEPAK Excel Add-In. You may have to acknowledge a popup dialog. Launch Excel with HEPAK Add-In already installed to suppress dialog.')
 hepak = xl.Workbooks.Open(os.path.join(pwd, 'hepak.xla'))
 

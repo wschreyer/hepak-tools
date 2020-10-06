@@ -51,7 +51,7 @@ The module provides the same functions that are available in Excel when using th
 
 ## HE3PAK interface
 
-he3pak.py provides a Python interface to the [HE3PAK DLL library](http://www.htess.com/he3pak.htm). It works out-of-the-box on Windows, but should in principle work on Linux as well with the zugbruecke package (not tested).
+he3pak.py provides a Python interface to the [HE3PAK DLL library](http://www.htess.com/he3pak.htm). It works out-of-the-box with 32bit Python on Windows. If you have 64bit Python you will need to install the package msl-loadlib. It should in principle work on Linux as well with the zugbruecke package (not tested).
 
 The module provides five functions calculating various properties of He3, see the module for all available properties:
 
@@ -109,8 +109,9 @@ The module provides five functions calculating various properties of He3, see th
 
 1. Download and install python for Windows.
 2. Download the python modules, HEPAK Excel Add-In, and HE3PAK library all into the same folder.
-3. Start a command line or PowerShell (shift+right-click in folder) and install pywin32 with `python -m pip pywin32`.
-4. Run `python example.py` to execute the example script. You may have to acknowledge the dialog showing HEPAK License information (Starting Excel with the Add-In already installed beforehand will suppress this dialog). Then the script will print a few calculated He4 and He3 properties and list some information about the data available in HEPAK.
+3. Start a command line or PowerShell (shift+right-click in folder) and install pywin32 with `python -m pip install pywin32`.
+4. If you've downloaded 64bit Python install msl-loadlib with `python -m pip install msl-loadlib`.
+5. Run `python example.py` to execute the example script. You may have to acknowledge the dialog showing HEPAK License information (Starting Excel with the Add-In already installed beforehand will suppress this dialog). Then the script will print a few calculated He4 and He3 properties and list some information about the data available in HEPAK.
 
 
 # Python scripts using the HEPAK modules
