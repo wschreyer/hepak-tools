@@ -51,7 +51,7 @@ The module provides the same functions that are available in Excel when using th
 
 ## HE3PAK interface
 
-he3pak.py provides a Python interface to the [HE3PAK DLL library](http://www.htess.com/he3pak.htm). It works out-of-the-box with 32bit Python on Windows. If you have 64bit Python you will need to install the package msl-loadlib. It should in principle work on Linux as well with the zugbruecke package (not tested).
+he3pak.py provides a Python interface to the [HE3PAK DLL library](http://www.htess.com/he3pak.htm). It works out-of-the-box with 32bit Python on Windows. It will NOT WORK with 64bit Python (unless you have a 64bit version of HE3PAK I guess?). It should in principle work on Linux as well with the zugbruecke package (not tested).
 
 The module provides five functions calculating various properties of He3, see the module for all available properties:
 

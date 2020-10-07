@@ -1,6 +1,5 @@
 import sys
 import os
-import platform
 
 if any([sys.platform.startswith(os_name) for os_name in ['linux', 'darwin', 'freebsd']]):
   # Linux version:
@@ -57,11 +56,8 @@ else:
 
 pwd = os.path.abspath(os.path.dirname(sys.argv[0]))
 
-if platform.architecture()[0] == '32bit':
-  he3pak = ctypes.WinDLL(os.path.join(pwd, 'he3eos.dll'))
-elif platform.architecture()[0] == '64bit':
-  import msl.loadlib
-  he3pak = msl.loadlib.LoadLibrary(os.path.join(pwd, 'he3eos.dll'))
+he3pak = ctypes.WinDLL(os.path.join(pwd, 'he3eos.dll'))
+
 he3pak.DFPTdll.argtypes = (ctypes.POINTER(ctypes.c_double),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_double),ctypes.POINTER(ctypes.c_double))
 he3pak.Fundtdll.argtypes = (ctypes.POINTER(ctypes.c_double*40),ctypes.POINTER(ctypes.c_double),ctypes.POINTER(ctypes.c_double))
 he3pak.SatXFunTdll.argtypes = (ctypes.POINTER(ctypes.c_double*40),ctypes.POINTER(ctypes.c_double*40),ctypes.POINTER(ctypes.c_double))
