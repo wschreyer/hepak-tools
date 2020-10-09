@@ -4,6 +4,17 @@ import scipy.interpolate
 import matplotlib.pyplot as plt
 import matplotlib.colors
 
+def plotHe3boilingData(T, q, dT):
+  fig, ax = plt.subplots(1, 1)
+  im = ax.pcolormesh(T, q, dT, cmap = 'hsv', norm = matplotlib.colors.LogNorm(), shading = 'auto')
+  ax.set_yscale('log')
+  ax.set_xlabel('Temperature (K)')
+  ax.set_ylabel(r'Heat flux (W/m$^{2}$)')
+  zax = fig.colorbar(im, ax = ax)
+  zax.set_label('Temperature difference (K)')
+  plt.savefig('He3boiling.pdf')
+
+
 # interpolate measured He3 boiling curves
 # from Maeda, Beppu, Fujii, Shigi, Cryogenics 40 (2000) 713-719)
 # and Tanaka, Kodama, Cryogenics 29 (1989) 203
@@ -19,13 +30,5 @@ def loadHe3boilingData():
   spline = scipy.interpolate.LinearNDInterpolator(TQdata, dTdata, rescale = True)
   nearest = scipy.interpolate.NearestNDInterpolator(TQdata, dTdata, rescale = True)
   T, q = numpy.meshgrid(numpy.linspace(0.5, 2.1), numpy.logspace(-2, 4))
-  h = numpy.divide(q, numpy.vectorize(spline)(T, q))
-  fig, ax = plt.subplots(1, 1)
-  im = ax.pcolormesh(T, q, h, cmap = 'hsv', norm = matplotlib.colors.LogNorm())
-  ax.set_yscale('log')
-  ax.set_xlabel('Temperature (K)')
-  ax.set_ylabel(r'Heat flux (W/m$^{2}$)')
-  zax = fig.colorbar(im, ax = ax)
-  zax.set_label(r'Heat transfer coefficient (W/m$^{2}$ K)')
-  plt.savefig('He3boiling.pdf')
+#  plotHe3boilingData(T, q, numpy.vectorize(spline)(T, q))
   return spline, nearest

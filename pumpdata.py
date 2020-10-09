@@ -6,15 +6,7 @@ import matplotlib.ticker
 import hepak
 import he3pak
 
-# load pumping curves of Busch 2-stage system
-def loadPumpData(filename):
-  Pdata = []
-  flowData = []
-  with open(filename) as csvfile:
-    csvreader = csv.reader(csvfile, delimiter = ',')
-    for line in csvreader:
-      Pdata.append(float(line[0])*133.322) # pressure data is in torr
-      flowData.append(float(line[1])/1000.) # flow data is in g/s
+def plotPumpData(Pdata, flowData):
   fig, ax = plt.subplots(constrained_layout = True)
   ax.plot(Pdata, numpy.multiply(flowData, 1000.*2.), label = '3He')
   ax.plot(Pdata, numpy.multiply(flowData, 1000./0.75), label = '4He')
@@ -37,5 +29,17 @@ def loadPumpData(filename):
   ax3.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.1))
   ax3.xaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter('%.1f'))
   plt.savefig('pumpingCurve.pdf')
+
+
+# load pumping curves of Busch 2-stage system
+def loadPumpData(filename):
+  Pdata = []
+  flowData = []
+  with open(filename) as csvfile:
+    csvreader = csv.reader(csvfile, delimiter = ',')
+    for line in csvreader:
+      Pdata.append(float(line[0])*133.322) # pressure data is in torr
+      flowData.append(float(line[1])/1000.) # flow data is in g/s
+#  plotPumpData(Pdata, flowData)
   return scipy.interpolate.interp1d(Pdata, flowData)
   

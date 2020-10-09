@@ -107,7 +107,7 @@ The module provides five functions calculating various properties of He3, see th
 
 ## Installation on Windows
 
-1. Download and install python for Windows.
+1. Download and install python (32bit!) for Windows.
 2. Download the python modules, HEPAK Excel Add-In, and HE3PAK library all into the same folder.
 3. Start a command line or PowerShell (shift+right-click in folder) and install pywin32 with `python -m pip install pywin32`.
 4. If you've downloaded 64bit Python install msl-loadlib with `python -m pip install msl-loadlib`.
@@ -122,7 +122,11 @@ example.py demonstrates the use of all the functions provided by both interfaces
 
 ## UCN-source model
 
-UCNsource.py provides a model of the He3 fridge for the new UCN source at TRIUMF. It does a scan of all experimental parameters and plots the resulting temperatures and flows in the fridge. Requires SciPy to solve the model equations and matplotlib to plot the results.
+UCNsource.py provides a model of the He3 fridge for the new UCN source at TRIUMF.
+
+UCNsource_parameterSweep.py does a scan of all experimental parameters and plots the resulting temperatures and flows in the fridge. Requires SciPy to solve the model equations and matplotlib to plot the results.
+
+UCNsource_HeIIsegments.py calculates the temperature profile in the HeII channel and prints out a list of temperatures, UCN storage lifetimes, and imaginary Fermi potential averaged over segments along the channel.
 
 ### Supplemental data
 
