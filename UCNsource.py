@@ -25,11 +25,11 @@ def He3CoolingLoad(flow, pressure, inletTemperature, outletTemperature):
   return flow*(inletEnthalpy - outletEnthalpy) # heat load on 1K pot = He3 gas flow * He3 enthalpy difference
 
 # calculate evaporation rate of helium reservoir when flowing He3 through it (assuming He3 is cooled to reservoir temperature)
-def HeReservoirEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IPPressure, IPInletTemperature, reservoirPressure):
+def HeReservoirEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IPPressure, IPInletTemperature, staticLoad, reservoirPressure):
   reservoirTemperature = hepak.HeCalc('T', 0, 'P', reservoirPressure, 'SV', 0., 1)
   He3HeatLoad = He3CoolingLoad(He3Flow, He3Pressure, He3InletTemperature, reservoirTemperature)
   IPHeatLoad = HeCoolingLoad(IPFlow, IPPressure, IPInletTemperature, reservoirTemperature)
-  return (He3HeatLoad + IPHeatLoad)/hepak.HeCalc(7, 0, 'P', reservoirPressure, 'SL', 0., 1) # evaporation flow = heatLoad/latent heat
+  return (He3HeatLoad + IPHeatLoad + staticLoad)/hepak.HeCalc(7, 0, 'P', reservoirPressure, 'SL', 0., 1) # evaporation flow = heatLoad/latent heat
   
 # calculate required flow to cool 20K and 100K shields, with additional heat load by isopure He flowing over shields
 # static heat loads on shields are assumed fixed
@@ -57,7 +57,7 @@ def OneKPotTemperature(HeFlow, pumpingPressureDrop):
   return T
 
 # calculate evaporation rate from 1K pot at certain temperature and He3 flow
-def OneKPotEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IPPressure, IPInletTemperature, HeInletPressure, HeInletTemperature, OneKPotTemperature):
+def OneKPotEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IPPressure, IPInletTemperature, HeInletPressure, HeInletTemperature, staticLoad, OneKPotTemperature):
   He3HeatLoad = He3CoolingLoad(He3Flow, He3Pressure, He3InletTemperature, OneKPotTemperature)
   IPHeatLoad = HeCoolingLoad(IPFlow, IPPressure, IPInletTemperature, OneKPotTemperature)
 
@@ -65,7 +65,7 @@ def OneKPotEvaporation(He3Flow, He3Pressure, He3InletTemperature, IPFlow, IPPres
   HeVaporEnthalpy = hepak.HeCalc('H', 0, 'T', OneKPotTemperature, 'SV', 0., 1)
   HeLiquidEnthalpy = hepak.HeCalc('H', 0, 'T', OneKPotTemperature, 'SL', 0., 1)
   liquidFraction = (HeInletEnthalpy - HeVaporEnthalpy)/(HeLiquidEnthalpy - HeVaporEnthalpy)
-  return (He3HeatLoad + IPHeatLoad)/hepak.HeCalc(7, 0, 'T', OneKPotTemperature, 'SL', 0., 1)/liquidFraction # He mass flow = heat load / latent heat(T) / (1 - vapor mass fraction(H,T))
+  return (He3HeatLoad + IPHeatLoad + staticLoad)/hepak.HeCalc(7, 0, 'T', OneKPotTemperature, 'SL', 0., 1)/liquidFraction # He mass flow = heat load / latent heat(T) / (1 - vapor mass fraction(H,T))
 
 # calculate He3 flow through JT valve required to remove heatLoad
 def He3Flow(inletTemperature, inletPressure, temperature, heatLoad):
@@ -147,6 +147,8 @@ def GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, con
       g_lambda = hepak.HeCalc('D', 0, 'P', pressure, 'T', T[0], 1)**2 * 1559.**4 * hepak.HeConst(9)**3 / 1450.
       f_inverse = g_lambda * ((T[0]/hepak.HeConst(9))**5.7 * (1 - (T[0]/hepak.HeConst(9))**5.7))**3 # heat conductivity from vanSciver
       return (heatLoad/A)**3 / f_inverse
+    else:
+      raise 'Invalid Gorter-Mellink model!'
   
   result = scipy.integrate.solve_ivp(dTdx, (0., channelLength), [T_low], dense_output = True) # integrate ODE dT/dx = (q/A)^3 / k(T)
   if not result.success:
@@ -164,7 +166,7 @@ def HeIItemperatureHigh(channelLength, T_low, pressure, heatLoad, channelDiamete
 
 # x: [3He flow, 1K pot temperature, 4He temperature at HEX1]
 def equationSet(x, parameters):
-  heatLoad = parameters['Beam heating'] + parameters['Static heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], x[1], x[2])
+  heatLoad = parameters['Beam heating'] + parameters['Isopure static heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], x[1], x[2])
   T_He3 = He3Temperature(x[0], parameters['3He pressure drop'])
 
   flow = He3Flow(x[1], parameters['3He inlet pressure'], T_He3, heatLoad)
@@ -172,7 +174,7 @@ def equationSet(x, parameters):
   reservoirTemperature = hepak.HeCalc('T', 0, 'P', parameters['He reservoir pressure'], 'SV', 0., 1)
   OneKPotFlow = OneKPotEvaporation(x[0], parameters['3He inlet pressure'], parameters['HEX4 exit temperature'], \
                                    parameters['Isopure He flow'], parameters['Isopure He pressure'], reservoirTemperature, \
-								   parameters['He reservoir pressure'], parameters['HEX5 exit temperature'], x[1])
+								                   parameters['He reservoir pressure'], parameters['HEX5 exit temperature'], parameters['1K pot static load'], x[1])
   T_1Kpot = OneKPotTemperature(OneKPotFlow, parameters['He pressure drop'])
 
   T_HEX1_low = HEX1TemperatureLow(T_He3, parameters['HEX1 length'], parameters['Channel diameter'], parameters['HEX1 surface'], heatLoad)
@@ -194,17 +196,17 @@ def calcUCNSource(parameters):
   result['He reservoir temperature'] = hepak.HeCalc('T', 0, 'P', parameters['He reservoir pressure'], 'SV', 0., 1)
   result['1K pot flow'] = OneKPotEvaporation(result['3He flow'], parameters['3He inlet pressure'], parameters['HEX4 exit temperature'], \
                                              parameters['Isopure He flow'], parameters['Isopure He pressure'], result['He reservoir temperature'], \
-											 parameters['He reservoir pressure'], parameters['HEX5 exit temperature'], result['1K pot temperature'])
+											                       parameters['He reservoir pressure'], parameters['HEX5 exit temperature'], parameters['1K pot static load'], result['1K pot temperature'])
   result['He reservoir flow'] = HeReservoirEvaporation(result['3He flow'], parameters['3He inlet pressure'], parameters['He reservoir inlet temperature'], \
                                                        parameters['Isopure He flow'], parameters['Isopure He pressure'], parameters['20K shield temperature'], \
-													   parameters['He reservoir pressure'])
+													                             parameters['He reservoir static load'], parameters['He reservoir pressure'])
   result['He consumption'] = (result['He reservoir flow'] + result['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600
   result['20K shield flow'], result['100K shield flow'] = shieldFlow(parameters['20K shield temperature'], parameters['100K shield temperature'], result['He reservoir temperature'] + 0.1, \
                                                                      parameters['20K shield temperature'], parameters['Isopure He flow'], parameters['Isopure He pressure'])
   result['Shield consumption'] = max(result['20K shield flow'], result['100K shield flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600
  
   result['T_3He'] = He3Temperature(result['3He flow'], parameters['3He pressure drop'])
-  heatLoad = parameters['Beam heating'] + parameters['Static heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], result['1K pot temperature'], result['T_HeII_low'])
+  heatLoad = parameters['Beam heating'] + parameters['Isopure static heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], result['1K pot temperature'], result['T_HeII_low'])
   result['T_HEX1_low'] = HEX1TemperatureLow(result['T_3He'], parameters['HEX1 length'], parameters['Channel diameter'], parameters['HEX1 surface'], heatLoad)
   result['T_HEX1_high'] = HEX1TemperatureHigh(result['T_HEX1_low'], parameters['HEX1 length'], heatLoad)
 

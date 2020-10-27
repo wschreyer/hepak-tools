@@ -3,9 +3,9 @@ import hepak
 import matplotlib.pyplot as plt
 
 parameters = {
-'Beam heating':                   {'value': 8.1,         'range': (0., 10.),        'unit': 'W'}, # Beam on
-#'Beam heating':                   {'value': 0.,          'range': (0., 0.),         'unit': 'W'}, # Beam off
-'Static heat': 	                  {'value': 1.,          'range': (0.5, 2.),        'unit': 'W'},
+#'Beam heating':                   {'value': 8.1,         'range': (0., 10.),        'unit': 'W'}, # Beam on
+'Beam heating':                   {'value': 0.05,          'range': (0.05, 0.05),         'unit': 'W'}, # Beam off
+'Isopure static heat': 	          {'value': 1.,          'range': (0.5, 2.),        'unit': 'W'},
 #'3He pumping speed':              {'value': 4300.,       'range': (300., 10000.),   'unit': r'm$^{3}$/h'}, # 1.14g/s @ 5.85 torr (Busch proposal)
 #'He pumping speed':	             {'value': 2000.,       'range': (500., 5000.),    'unit': r'm$^{3}$/h'}, # 1.2g/s @ 9.9 torr (Busch proposal)
 #'Pump inlet temperature':         {'value': 290.,      	'range': (100., 300.), 	   'unit': 'K'},
@@ -13,9 +13,11 @@ parameters = {
 #'3He pressure drop':              {'value': 20000.,      'range': (0., 50000.),     'unit': 'Pa'}, # Standby mode
 'He pressure drop':               {'value': 100.,        'range': (0., 1000.),      'unit': 'Pa'},
 #'He pressure drop':               {'value': 10000.,      'range': (0., 10000.),     'unit': 'Pa'}, # Standby mode
-'He reservoir inlet temperature': {'value': 10.,          'range': (6., 12.,),      'unit': 'K'},
-'HEX4 exit temperature':          {'value': 2.8,         'range': (2., 3.5),	      'unit': 'K'},
-'HEX5 exit temperature':          {'value': 2.8,         'range': (2., 3.5),        'unit': 'K'},
+'He reservoir inlet temperature': {'value': 10.,         'range': (6., 12.,),       'unit': 'K'},
+'He reservoir static load':       {'value': 0.6,         'range': (0., 2.),         'unit': 'W'},
+'1K pot static load':             {'value': 0.05,        'range': (0., 1.),         'unit': 'W'},
+'HEX4 exit temperature':          {'value': 2.8,         'range': (2.5, 4.),	      'unit': 'K'},
+'HEX5 exit temperature':          {'value': 2.8,         'range': (2.5, 4.),        'unit': 'K'},
 #'1K pot inlet temperature':       {'value': 2.8,         'range': (2., 3.5),        'unit': 'K'},
 '3He inlet pressure':             {'value': 50000.,      'range': (30000., 80000.), 'unit': 'Pa'},
 'Channel diameter':               {'value': 0.148,       'range': (0.12, 0.2),      'unit': 'm'},
@@ -32,8 +34,8 @@ parameters = {
 }
 
 # scan parameter ranges and plot temperatures and flows
-plotRows = 3
-plotCols = 6
+plotRows = 4
+plotCols = 5
 datapoints = 10
 fig, axes = plt.subplots(plotRows, plotCols, figsize=(plotCols*6,plotRows*5))
 axes2 = axes.copy()
