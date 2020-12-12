@@ -122,15 +122,55 @@ def HeIITemperatureLow(T_Cu, HEX1length, HEX1diameter, heatLoad):
 #  return (T_Cu**3.46 + heatLoad/A/460.)**(1./3.46) # for polished/oxidized Cu, see van Sciver table 7.4
 
 
-# calculate temperature profile according to Gorter-Mellink equation, starting at temperature T_low
-# along channel with given length and diameter, filled with He-II at given pressure and transporting given heat load
+# calculate position where heat flux becomes zero (assuming constant heat flux removed along HEX1)
+def HeIIlowestTemperaturePosition(beamHeating, bulbLength, channelLength, HEX1length, staticHeat, funneledHeat, funnelLength):
+  staticHeatLength = bulbLength + channelLength + funnelLength # total length that receives static heating
+  upstreamLengthFraction = (bulbLength + channelLength)/staticHeatLength # fraction of total length upstream of HEX1 (used to calculate static heating)
+  upstreamHeating = beamHeating + staticHeat*upstreamLengthFraction # total heat introduced upstream of HEX1 (beam heating + upstream fraction of static heat)
+  downstreamHeating = funneledHeat + staticHeat*(1. - upstreamLengthFraction) # total heat introduced downstream of HEX1 (funneled heating + upstream fraction of static heat)
+  return HEX1length/2.*(downstreamHeating - upstreamHeating)/(beamHeating + staticHeat + funneledHeat) # position where heat flux becomes zero (assuming constant heat flux removed along HEX1)
+
+# calculate heat flux in He-II, x is distance from center of HEX1
+def HeIIheatFlux(x, beamHeating, bulbRadius, bulbLength, channelCrossSection, channelLength, HEX1length, staticHeat, funneledHeat, funnelCrossSection, funnelLength):
+  staticHeatLength = bulbLength + channelLength + funnelLength # total length that receives static heating
+  upstreamLengthFraction = (bulbLength + channelLength)/staticHeatLength # fraction of total length upstream of HEX1 (used to calculate static heating)
+  upstreamHeating = beamHeating + staticHeat*upstreamLengthFraction # total heat introduced upstream of HEX1 (beam heating + upstream fraction of static heat)
+  downstreamHeating = funneledHeat + staticHeat*(1. - upstreamLengthFraction) # total heat introduced downstream of HEX1 (funneled heating + upstream fraction of static heat)
+  x0 = HeIIlowestTemperaturePosition(beamHeating, bulbLength, channelLength, HEX1length, staticHeat, funneledHeat, funnelLength) 
+  if x < -HEX1length/2. - funnelLength:
+    return 0.
+  elif x < -HEX1length/2.:
+    crossSection = channelCrossSection - (-HEX1length/2. - x)/funnelLength*(channelCrossSection - funnelCrossSection) # cross section linearly tapers from HEX1 to funnel exit
+    return (funneledHeat + staticHeat*(x + HEX1length/2. + funnelLength)/staticHeatLength)/crossSection # downstream of HEX1 heat flux consists of funneled heat plus static heat added along funnel
+  elif x < x0:
+    return downstreamHeating*(x0 - x)/(x0 + HEX1length/2.)/channelCrossSection # along HEX1 downstream heat flux is removed at a constant rate
+  elif x < HEX1length/2.:
+    return -upstreamHeating*(x - x0)/(HEX1length/2. - x0)/channelCrossSection # along HEX1 upstream heat flux is removed at a constant rate
+  elif x < HEX1length/2. + channelLength:
+    return -(beamHeating + staticHeat*(HEX1length/2. + channelLength + bulbLength - x)/staticHeatLength)/channelCrossSection # in channel heat flux consists of beam heating plus static heat load added in channel and bulb upstream of x
+  elif x < HEX1length/2. + channelLength + bulbLength:
+    distanceFromBulbCenter = x - HEX1length/2. - channelLength - bulbLength/2. # model cross section of bulb as hemispheres with cylindrical piece in between
+    if abs(distanceFromBulbCenter) < bulbLength/2. - bulbRadius:
+      bulbCrossSection = bulbRadius**2 * math.pi # cylindrical piece in center
+    elif distanceFromBulbCenter < 0:
+      distanceFromBulbCenter = abs(distanceFromBulbCenter) - (bulbLength/2. - bulbRadius)
+      bulbCrossSection = max(channelCrossSection, ( bulbRadius**2 - distanceFromBulbCenter**2 ) * math.pi) # cross section of sphere at given distance from center, but use channel cross section when downstream hemisphere shrinks below that
+    else:
+      distanceFromBulbCenter = abs(distanceFromBulbCenter) - (bulbLength/2. - bulbRadius)
+      bulbCrossSection = ( bulbRadius**2 - distanceFromBulbCenter**2 ) * math.pi # cross section of sphere at given distance from center
+    return -(beamHeating*(HEX1length/2. + channelLength + bulbLength - x)/bulbLength + staticHeat*(HEX1length/2. + channelLength + bulbLength - x)/staticHeatLength)/bulbCrossSection # in bulb heat flux consists of beam and static heating added in bulb upstream of x
+  else:
+    return 0.
+
+
+# calculate temperature profile according to Gorter-Mellink equation, starting at temperature T_low and position x0
+# along channel with given heat flux and length filled with He-II at given pressure, and transporting given heat load
 # conductivity is either calculated using 'HEPAK' or 'VanSciver'
 # returns interpolation function for temperature profile
-def GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, conductivityModel):
-  A = math.pi/4.*channelDiameter**2
-  
+def GorterMellink(T_low, pressure, heatFluxModel, x0, length, conductivityModel):
   def dTdx(x, T):
-    if heatLoad == 0:
+    heatFlux = heatFluxModel(x)
+    if heatFlux == 0.:
       return 0.
     if T[0] < hepak.HeConst(3):
       print('T_4He {0:.3g} outside HEPAK range!'.format(T[0]))
@@ -139,34 +179,37 @@ def GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, con
     if conductivityModel == 'HEPAK':
       k = hepak.HeCalc(38, 0, 'P', pressure, 'T', T[0], 1) # heat conductivity from HEPAK
       if k > 0:
-        return (heatLoad/A)**3 / k
+        return -heatFlux**3 / k
       else:
         print('HEPAK conductivity <= 0!')
         return 0.
     elif conductivityModel == 'VanSciver':	  
       g_lambda = hepak.HeCalc('D', 0, 'P', pressure, 'T', T[0], 1)**2 * 1559.**4 * hepak.HeConst(9)**3 / 1450.
       f_inverse = g_lambda * ((T[0]/hepak.HeConst(9))**5.7 * (1 - (T[0]/hepak.HeConst(9))**5.7))**3 # heat conductivity from vanSciver
-      return (heatLoad/A)**3 / f_inverse
+      return -heatFlux**3 / f_inverse
     else:
       raise 'Invalid Gorter-Mellink model!'
   
-  result = scipy.integrate.solve_ivp(dTdx, (0., channelLength), [T_low], dense_output = True) # integrate ODE dT/dx = (q/A)^3 / k(T)
+  result = scipy.integrate.solve_ivp(dTdx, (x0, length), [T_low], max_step = 0.05, dense_output = True, rtol = 1e-5, atol = 1e-8) # integrate ODE dT/dx = (q/A)^3 / k(T)
   if not result.success:
     print(result.message)
   return result.sol
  
 
 # calculate temperature profile of He-II in conduction channel from Gorter-Mellink equation
-def HeIItemperatureHigh(channelLength, T_low, pressure, heatLoad, channelDiameter):
-  profileHEPAK = GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, 'HEPAK')
-  profileVanSciver = GorterMellink(T_low, pressure, heatLoad, channelDiameter, channelLength, 'VanSciver')
+def HeIItemperatureHigh(channelLength, HEX1length, T_low, pressure, beamHeating, staticHeat, funneledHeat, channelDiameter):
+  x0 = HeIIlowestTemperaturePosition(beamHeating, 0.4, channelLength, HEX1length, staticHeat, funneledHeat, 0.5)
+  crossSection = channelDiameter**2/4.*math.pi
+  heatFluxModel = lambda x: HeIIheatFlux(x, beamHeating, 0.18, 0.386, crossSection, channelLength, HEX1length, staticHeat, funneledHeat, crossSection, 0.25)
+  profileHEPAK = GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, 'HEPAK')
+  profileVanSciver = GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, 'VanSciver')
   
   return profileHEPAK(channelLength)[0], profileVanSciver(channelLength)[0]
 
 
 # x: [3He flow, 1K pot temperature, 4He temperature at HEX1]
 def equationSet(x, parameters):
-  heatLoad = parameters['Beam heating'] + parameters['Isopure static heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], x[1], x[2])
+  heatLoad = parameters['Beam heating'] + parameters['He-II static heat'] + parameters['He-II funnel heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], x[1], x[2])
   T_He3 = He3Temperature(x[0], parameters['3He pressure drop'])
 
   flow = He3Flow(x[1], parameters['3He inlet pressure'], T_He3, heatLoad)
@@ -206,7 +249,7 @@ def calcUCNSource(parameters):
   result['Shield consumption'] = max(result['20K shield flow'], result['100K shield flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600
  
   result['T_3He'] = He3Temperature(result['3He flow'], parameters['3He pressure drop'])
-  heatLoad = parameters['Beam heating'] + parameters['Isopure static heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], result['1K pot temperature'], result['T_HeII_low'])
+  heatLoad = parameters['Beam heating'] + parameters['He-II static heat'] + parameters['He-II funnel heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], result['1K pot temperature'], result['T_HeII_low'])
   result['T_HEX1_low'] = HEX1TemperatureLow(result['T_3He'], parameters['HEX1 length'], parameters['Channel diameter'], parameters['HEX1 surface'], heatLoad)
   result['T_HEX1_high'] = HEX1TemperatureHigh(result['T_HEX1_low'], parameters['HEX1 length'], heatLoad)
 
@@ -216,7 +259,8 @@ def calcUCNSource(parameters):
   if parameters['Beam heating'] > 0. and result['T_HeII_low'] > hepak.HeConst(3):
     result['HeII vapor pressure'] = hepak.HeCalc('P', 0, 'T', result['T_HeII_low'], 'SL', 0., 1)
     result['HeII pressure head'] = hepak.HeCalc('D', 0, 'T', result['T_HeII_low'], 'SL', 0., 1)*9.81*parameters['HeII overfill']
-    result['T_HeII_high'] = HeIItemperatureHigh(parameters['Channel length'], result['T_HeII_low'], result['HeII vapor pressure'] + result['HeII pressure head'], parameters['Beam heating'], parameters['Channel diameter'])
+    result['T_HeII_high'] = HeIItemperatureHigh(parameters['Channel length'], parameters['HEX1 length'], result['T_HeII_low'], result['HeII vapor pressure'] + result['HeII pressure head'], \
+                                                parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], parameters['Channel diameter'])
 
   return result
 
