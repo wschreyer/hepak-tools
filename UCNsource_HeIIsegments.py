@@ -10,15 +10,22 @@ hbar = 1.054571817e-34 # J s
 m_n = 1.67492749804e-27 # kg
 kB = 1.380649e-23 # J/K
 massHe = 4.002602 *  1.66053906660e-27 # kg
-thermalHeCrossSection = 0.76e-28 # m2
-HeScatteringLength = 3.26e-15 # m
+HeScatteringLength = 3.26e-15 # m (https://www.ncnr.nist.gov/resources/n-lengths/elements/he.html)
+HeBoundCrossSection = 1.34e-28 # m^2 (https://www.ncnr.nist.gov/resources/n-lengths/elements/he.html)
 JpereV = 1.602176634e-19 # J/eV
 
 def liquidLifetime(T, YoshikiParameter):
   return 1./(YoshikiParameter*T**7)
 
 def vaporLifetime(temperature, pressure):
-  return math.sqrt(math.pi/8. * kB * massHe * temperature) / pressure / thermalHeCrossSection
+  density = hepak.HeCalc('D', 0, 'T', temperature, 'P', pressure, 1)
+
+  freeCrossSection = HeBoundCrossSection/(1 + m_n/massHe)**2
+  # upscattering cross section = "free" cross section * average He atom velocity / neutron velocity
+  # see https://doi.org/10.1103/PhysRevC.92.065501
+  averageHeVelocity = 2 * numpy.sqrt(2 * kB * temperature / numpy.pi / massHe)
+  
+  return 1./(density / massHe * freeCrossSection * averageHeVelocity)
 
 def realFermiPotential(density):
   return 2.*math.pi*hbar**2/m_n*density/massHe*HeScatteringLength/JpereV*1e9
