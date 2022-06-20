@@ -90,8 +90,8 @@ def frictionFactor(ID, OD, roughness, reynoldsNumber):
 def nusseltNumber(massFlow, ID, OD, T, T_wall, P, roughness, gas):
   Re = reynoldsNumber(massFlow, ID, OD, T, P, gas)
   
-  if Re < 1000: # laminar flow
-    return 4.36
+#  if Re < 1000: # laminar flow
+#    return 4.36
   
   if gas == 'He4':
     prandtlNumber = hepak.HeCalc(27, 0, 'T', T, 'P', P, 1)
@@ -116,7 +116,8 @@ def nusseltNumber(massFlow, ID, OD, T, T_wall, P, roughness, gas):
 #  if Re > 10000.:
 #  if not 0.7 <= prandtlNumber <= 16700.:
 #    print('Prandtl number {0} outside valid range for Sieder-Tate correlation'.format(prandtlNumber))
-  return 0.023 * Re**0.8 * prandtlNumber**(1./3.) * (viscosity/viscosity_wall)**0.14 # Sieder-Tate correlation
+  Nu = 0.023 * Re**0.8 * prandtlNumber**(1./3.) * (viscosity/viscosity_wall)**0.14 # Sieder-Tate correlation
+  return max(Nu, 4.36)
   
 #  if not 0.5 <= prandtlNumber <= 2000.:
 #    print('Prandtl number {0} outside valid range for Gnielinski correlation'.format(prandtlNumber))
@@ -157,10 +158,7 @@ def dQdx2(massFlow, ID, OD, T, T_innerWall, T_outerWall, P, roughness, gas):
 def dQCudx(T1, T2, diameter, thickness):
   return CuThermalConductivity((T1 + T2)/2.) * (T2 - T1) / thickness * diameter*math.pi
   
-# flow of N2 evaporated by heat load from a flow of warm He4 or He3 gas
-def LN2evaporationFlow(vaporPressure, massFlow, T_incoming, P_incoming, incomingGas):
-  T = CoolProp.CoolProp.PropsSI('T', 'P', vaporPressure, 'Q', 0, 'Nitrogen')
-  latentHeat = CoolProp.CoolProp.PropsSI('H', 'P', vaporPressure, 'Q', 1, 'Nitrogen') - CoolProp.CoolProp.PropsSI('H', 'P', vaporPressure, 'Q', 0, 'Nitrogen')
+def heatLoad(T, massFlow, T_incoming, P_incoming, incomingGas):
   if incomingGas == 'He4':
     enthalpyDifference = hepak.HeCalc('H', 0, 'T', T_incoming, 'P', P_incoming, 1) - hepak.HeCalc('H', 0, 'T', T, 'P', P_incoming, 1)
   elif incomingGas == 'He3':
@@ -171,8 +169,13 @@ def LN2evaporationFlow(vaporPressure, massFlow, T_incoming, P_incoming, incoming
     enthalpyDifference = CoolProp.CoolProp.PropsSI('enthalpy', 'T', T_incoming, 'P', P_incoming, 'Helium') - CoolProp.CoolProp.PropsSI('enthalpy', 'T', T, 'P', P_incoming, 'Helium')
   else:
     raise NameError('Unknow gas ' + gas + '!')
-  heatLoad = massFlow*enthalpyDifference
-  return heatLoad / latentHeat
+  return massFlow*enthalpyDifference
+  
+# flow of N2 evaporated by heat load from a flow of warm He4 or He3 gas
+def LN2evaporationFlow(vaporPressure, massFlow, T_incoming, P_incoming, incomingGas):
+  T = CoolProp.CoolProp.PropsSI('T', 'P', vaporPressure, 'Q', 0, 'Nitrogen')
+  latentHeat = CoolProp.CoolProp.PropsSI('H', 'P', vaporPressure, 'Q', 1, 'Nitrogen') - CoolProp.CoolProp.PropsSI('H', 'P', vaporPressure, 'Q', 0, 'Nitrogen')
+  return heatLoad(T, massFlow, T_incoming, P_incoming, incomingGas) / latentHeat
   
 
 # pressure drop per length of He4 or He3 gas flowing through annulus with wall roughness
@@ -229,6 +232,11 @@ def Twall(innerMassFlow, innerID, innerOD, T_inner, P_inner, innerGas, outerMass
   
 # plot various gas properties along the length of the heat exchanger
 def plotTubeInTubeHEX(sol, innerMassFlow, innerID, innerOD, innerGas, outerMassFlow, outerID, outerOD, outerGas, N2ID, N2OD, roughness):
+  print('Warm outlet: {0:.4g} K'.format(sol.y[1][0]))
+  print('Cold outlet: {0:.4g} K'.format(sol.y[0][-1]))
+  print('Pressure drop incoming: {0:.4g} Pa'.format(sol.y[3][-1] - sol.y[3][0]))
+  print('Pressure drop outgoing: {0:.4g} Pa'.format(sol.y[2][0] - sol.y[2][-1]))
+
   fig, axes = plt.subplots(3, 2, figsize = (9.6, 10.8))
   fig.set_tight_layout(True)
   axes[0][0].plot(sol.x, sol.y[0], color = 'tab:red')
@@ -242,6 +250,7 @@ def plotTubeInTubeHEX(sol, innerMassFlow, innerID, innerOD, innerGas, outerMassF
     y = numpy.array([Twall(innerMassFlow, innerID, innerOD, T_He, P_He, outerGas, N2massFlow, 0., N2OD, T_N2, P_N2, 'N2', roughness) \
                      for T_N2, T_He, P_N2, P_He in zip(sol.y[0], sol.y[4], sol.y[2], sol.y[5])])
     axes[0][0].plot(sol.x, y, color = 'tab:purple')
+  axes[0][0].set_xlabel('Position (m)')
   axes[0][0].set_yscale('log')
   axes[0][0].set_ylabel('Temperature (K)')
   axes[0][0].grid(True, 'both')
@@ -253,9 +262,10 @@ def plotTubeInTubeHEX(sol, innerMassFlow, innerID, innerOD, innerGas, outerMassF
   if len(sol.y) > 4:
     y = numpy.array([reynoldsNumber(N2massFlow, 0., N2OD, T, P, 'N2') for T, P in zip(sol.y[4], sol.y[5])])
     axes[0][1].plot(sol.x, y, color = 'tab:green')
-  y = numpy.array([nusseltNumber(outerMassFlow, outerID, outerOD, T_outer, Twall(innerMassFlow, innerID, innerOD, T_inner, P_inner, innerGas, outerMassFlow, outerID, outerOD, T_outer, P_outer, outerGas, roughness), P_outer, roughness, outerGas) \
-                   for T_inner, P_inner, T_outer, P_outer in zip(sol.y[0], sol.y[2], sol.y[1], sol.y[3])])
-  axes[0][1].plot(sol.x, y, color = 'tab:cyan')
+#  y = numpy.array([nusseltNumber(outerMassFlow, outerID, outerOD, T_outer, Twall(innerMassFlow, innerID, innerOD, T_inner, P_inner, innerGas, outerMassFlow, outerID, outerOD, T_outer, P_outer, outerGas, roughness), P_outer, roughness, outerGas) \
+#                   for T_inner, P_inner, T_outer, P_outer in zip(sol.y[0], sol.y[2], sol.y[1], sol.y[3])])
+#  axes[0][1].plot(sol.x, y, color = 'tab:cyan')
+  axes[0][1].set_xlabel('Position (m)')
   axes[0][1].set_yscale('log')
   axes[0][1].set_ylabel('Reynolds number')
   axes[0][1].grid(True, 'both')
@@ -264,6 +274,7 @@ def plotTubeInTubeHEX(sol, innerMassFlow, innerID, innerOD, innerGas, outerMassF
   #axes[1][0].plot(sol.x, y, color = 'tab:red')
   y = numpy.array([he3pak.He3Density(P_He3, T) for T, P_He3 in zip(sol.y[1], sol.y[3])])
   axes[1][0].plot(sol.x, y, color = 'tab:blue')
+  axes[1][0].set_xlabel('Position (m)')
   axes[1][0].set_ylabel('Density (kg/m3)')
   axes[1][0].grid(True, 'both')
   
@@ -274,16 +285,22 @@ def plotTubeInTubeHEX(sol, innerMassFlow, innerID, innerOD, innerGas, outerMassF
   if len(sol.y) > 4:
     y = numpy.array([velocity(N2massFlow, N2ID, N2OD, T, P, 'N2') for T, P in zip(sol.y[4], sol.y[5])])
     axes[1][1].plot(sol.x, y, color = 'tab:green')
+  axes[1][1].set_xlabel('Position (m)')
   axes[1][1].set_yscale('log')
   axes[1][1].set_ylabel('Velocity (m/s)')
   axes[1][1].grid(True, 'both')
   
   axes[2][0].plot(sol.x, sol.y[2], color = 'tab:red')
-  axes[2][0].plot(sol.x, sol.y[3], color = 'tab:blue')
   if len(sol.y) > 4:
     axes[2][0].plot(sol.x, sol.y[5], color = 'tab:green')
+  axes[2][0].set_xlabel('Position (m)')
   axes[2][0].set_ylabel('Pressure (Pa)')
   axes[2][0].grid(True, 'both')  
+
+  axes[2][1].plot(sol.x, sol.y[3], color = 'tab:blue')
+  axes[2][1].set_xlabel('Position (m)')
+  axes[2][1].set_ylabel('Pressure (Pa)')
+  axes[2][1].grid(True, 'both')  
   
   while True:
     try:
@@ -303,7 +320,7 @@ def HEX7(HeMassFlow, He3MassFlow, T_He_in, T_He3_in):
   outerOD = 16.561e-3
   P_He3_in = 51120
   P_He_in = 110300
-  meshSize = 10
+  meshSize = 20
   HEXlength = 19.
   roughness = 0.002e-3
   
@@ -334,7 +351,7 @@ def HEX7(HeMassFlow, He3MassFlow, T_He_in, T_He3_in):
   								   numpy.linspace(T_He_in, T_He3_in, meshSize), \
   								   numpy.linspace(P_He_in, P_He_in - 5000., meshSize), \
   								   numpy.linspace(P_He3_in - 1000., P_He3_in, meshSize)],
-								  max_nodes = 100)
+								  max_nodes = 100, tol = 0.002)
   print(sol.message)
   plotTubeInTubeHEX(sol, HeMassFlow, innerID, innerOD, 'He', He3MassFlow, outerID, outerOD, 'He3', 0., 0., roughness)
 
@@ -347,9 +364,9 @@ def HEX7test(innerMassFlow, outerMassFlow, T_inner_in, T_outer_in):
   outerOD = 16.561e-3
   P_inner_in = 110e3
   P_outer_out = 110e3
-  meshSize = 10
-  HEXlength = 18.
-  roughness = 0.004e-3
+  meshSize = 20
+  HEXlength = 19.
+  roughness = 0.002e-3
 
   # differential-equation set
   # x = [position of grid points along heat exchanger]
@@ -378,7 +395,7 @@ def HEX7test(innerMassFlow, outerMassFlow, T_inner_in, T_outer_in):
   								   numpy.linspace(T_inner_in, T_outer_in, meshSize), \
   								   numpy.linspace(P_inner_in, P_inner_in - 5000., meshSize), \
   								   numpy.linspace(P_outer_out, P_outer_out - 1000., meshSize)], \
-								  max_nodes = 100)
+								  max_nodes = 100, tol = 0.005)
   print(sol.message)
   plotTubeInTubeHEX(sol, innerMassFlow, innerID, innerOD, 'He', outerMassFlow, outerID, outerOD, 'He', 0., 0., roughness)
 
@@ -391,10 +408,10 @@ def purifier(He3MassFlow, T_warm_in):
   outerOD = 26.035e-3
   N2ID = 28.575e-3
   N2OD = 32.131e-3
-  P_in = 60e3
+  P_in = 80e3
   P_N2_out = 101e3
-  meshSize = 10
-  HEXlength = 6.
+  meshSize = 20
+  HEXlength = 10.
   roughness = 0.002e-3
   
   # differential-equation set
@@ -434,7 +451,7 @@ def purifier(He3MassFlow, T_warm_in):
   								   numpy.linspace(P_in - 5000., P_in, meshSize), \
 								   numpy.linspace(80., T_warm_in, meshSize), \
 								   numpy.linspace(P_N2_out + 5000, P_N2_out, meshSize)], \
-								  max_nodes = 1000)
+								  max_nodes = 1000, tol = 0.005)
   print(sol.message)
   N2massFlow = LN2evaporationFlow(sol.y[5][0], He3MassFlow, sol.y[1][0], sol.y[3][0], 'He3')
   print('Inner out: {0:.4g} K, Outer out: {1:.4g} K, Inner dP: {2:.4g} Pa, Outer dP: {3:.4g} Pa, N2 flow: {4:.4g} kg/s, N2 out: {5:.4g} K, N2 dP: {6:.4g} Pa'.format(sol.y[0][-1], sol.y[1][0], sol.y[2][-1] - sol.y[2][0], sol.y[3][-1] - sol.y[3][0], N2massFlow, sol.y[4][-1], sol.y[5][-1] - sol.y[5][0]))
@@ -443,14 +460,19 @@ def purifier(He3MassFlow, T_warm_in):
 
 # calculate tube-in-tube counter-flow heat exchanger with cold He3 flowing through the inner tube and warm He3 flowing through the outer tube
 def purifierWithoutN2(He3MassFlow, T_warm_in):
+#  innerID = 0.
+#  innerOD = 10.922e-3
+#  outerID = 12.7e-3
+#  outerOD = 19.939e-3
   innerID = 0.
-  innerOD = 10.922e-3
-  outerID = 12.7e-3
-  outerOD = 19.939e-3
+  innerOD = 13.843e-3
+  outerID = 15.875e-3
+  outerOD = 26.035e-3
   P_in = 80e3
-  meshSize = 10
-  HEXlength = 5.
+  meshSize = 20
+  HEXlength = 10.
   roughness = 0.002e-3
+  T = 80.
   
   # differential-equation set
   # x = [position of grid points along heat exchanger]
@@ -467,38 +489,40 @@ def purifierWithoutN2(He3MassFlow, T_warm_in):
       dydx[1].append(-dTdx(He3MassFlow, outerID, outerOD, outerID*math.pi, T_outer, T_wall, P_outer, roughness, 'He3'))
       dydx[2].append(-dPdx(He3MassFlow, innerID, innerOD, roughness, T_inner, P_inner, 'He3'))
       dydx[3].append(dPdx(He3MassFlow, outerID, outerOD, roughness, T_outer, P_outer, 'He3'))
-    N2massFlow = LN2evaporationFlow(110e3, He3MassFlow, y[1][0], y[3][0], 'He3')
-    print('Inner out: {0:.4g} K, Outer out: {1:.4g} K, Inner dP: {2:.4g} Pa, Outer dP: {3:.4g} Pa, N2 flow: {4:.4g} kg/s'.format(y[0][-1], y[1][0], y[2][-1] - y[2][0], y[3][-1] - y[3][0], N2massFlow))
+    heat = heatLoad(T, He3MassFlow, y[1][0], y[3][0], 'He3')
+    print('Inner out: {0:.4g} K, Outer out: {1:.4g} K, Inner dP: {2:.4g} Pa, Outer dP: {3:.4g} Pa, heat load: {4:.4g} W'.format(y[0][-1], y[1][0], y[2][-1] - y[2][0], y[3][-1] - y[3][0], heat))
     return dydx
   
   # boundary conditions: fixed temperatures at gas inlets,
   # fixed pressure for warm-He3 inlet, cold-He3 inlet pressure = warm-He3 outlet pressure
   def bc(ya, yb):
-    return numpy.array([ya[0] - 80., yb[1] - T_warm_in, ya[2] - ya[3], yb[3] - P_in])
+    return numpy.array([ya[0] - T, yb[1] - T_warm_in, ya[2] - ya[3], yb[3] - P_in])
     
   sol = scipy.integrate.solve_bvp(dydx, bc, numpy.linspace(0., HEXlength, meshSize), \
-                                  [numpy.linspace(80., T_warm_in, meshSize), \
-  								   numpy.linspace(80., T_warm_in, meshSize), \
+                                  [numpy.linspace(T, T_warm_in, meshSize), \
+  								   numpy.linspace(T, T_warm_in, meshSize), \
   								   numpy.linspace(P_in - 5000., P_in - 10000., meshSize), \
   								   numpy.linspace(P_in - 5000., P_in, meshSize)], \
 								  max_nodes = 1000)
   print(sol.message)
+  heat = heatLoad(T, He3MassFlow, sol.y[1][0], sol.y[3][0], 'He3')
+  print('Heat load on adsorber: {0:.4g} W'.format(heat))
   plotTubeInTubeHEX(sol, He3MassFlow, innerID, innerOD, 'He3', He3MassFlow, outerID, outerOD, 'He3', 0., 0., roughness)
   
 
 
 # nominal flows and temperatures of HEX7
-He3MassFlow = 0.275e-3
+He3MassFlow = 0.275e-3 # max. flow
 HeMassFlow = 0.478e-3
 T_He3_in = 300.
 T_He_in = 5.
-HEX7(HeMassFlow, He3MassFlow, T_He_in, T_He3_in)
+#HEX7(HeMassFlow, He3MassFlow, T_He_in, T_He3_in)
 #HEX7(HeMassFlow/2., He3MassFlow/2., T_He_in, T_He3_in)
 #HEX7(HeMassFlow/4., He3MassFlow/4., T_He_in, T_He3_in)
-#HEX7(HeMassFlow/13., He3MassFlow/10., T_He_in, T_He3_in)
+HEX7(HeMassFlow/13.5, He3MassFlow/10., T_He_in, T_He3_in)
 
 # flows and temperatures for test at KEK
-#HEX7test(0.4e-3, 0.35e-3, 5., 295.)
+#HEX7test(0.4e-3, 0.38e-3, 8., 295.)
 
 # nominal flow for He3 purifier
 #purifier(1.e-3, 300.)

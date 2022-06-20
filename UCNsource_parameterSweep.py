@@ -23,6 +23,7 @@ parameters = {
 '3He inlet pressure':             {'value': 50000.,      'range': (30000., 80000.), 'unit': 'Pa'},
 'Channel diameter':               {'value': 0.148,       'range': (0.12, 0.2),      'unit': 'm'},
 'Channel length':                 {'value': 2.5,         'range': (1., 4.),         'unit': 'm'},
+'HEX1 diameter':                  {'value': 0.148,       'range': (0.12, 0.2),      'unit': 'm'},
 'HEX1 length': 	                  {'value': 0.6,         'range': (0.1, 0.8),       'unit': 'm'},
 'HEX1 surface':                   {'value': 1.67,        'range': (0.21, 2.),       'unit': r'm$^{2}$/m'},
 'HeII overfill':                  {'value': 0.05,        'range': (0.02, 0.2),      'unit': 'm'},
@@ -35,8 +36,8 @@ parameters = {
 }
 
 # scan parameter ranges and plot temperatures and flows
-plotRows = 3
-plotCols = 7
+plotRows = 4
+plotCols = 6
 datapoints = 10
 fig, axes = plt.subplots(plotRows, plotCols, figsize=(plotCols*6,plotRows*5))
 axes2 = axes.copy()
@@ -63,7 +64,11 @@ for i, p in enumerate(parameters):
     tempParameters[p] = value
     res = UCNsource.calcUCNSource(tempParameters)
     if res:
-      print('{0:.3g} {1}: {2:.1f} L/h'.format(value, parameters[p]['unit'], (max(res['He reservoir flow'], res['20K shield flow'], res['100K shield flow']) + res['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600))
+      print('{0:.3g} {1}: {2:.1f} L/h, T_low {3:.3f}'.format(value, 
+                                                             parameters[p]['unit'], 
+                                                             (max(res['He reservoir flow'], res['20K shield flow'], res['100K shield flow']) + res['1K pot flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600, 
+                                                             res['T_HeII_low'])
+                                                            )
       x.append(value)
       y.append(res['He reservoir flow']*1000)
       y2.append(res['T_HeII_high'][0])

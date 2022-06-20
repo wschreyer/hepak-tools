@@ -40,7 +40,7 @@ def shieldFlow(temp20K, temp100K, inlet20K, inlet100K, isopureFlow, isopurePress
   flow_100 = HeCoolingFlow(49. + 8.9 + 5.7 + 14. + IPHeatLoad_100, isopurePressure, inlet100K, temp100K)
   return flow_20, flow_100
 
-pumpData = pumpdata.loadPumpData('pumpdata/Busch_2stage_He3_torqueControl.csv')
+pumpDataHe4 = pumpdata.loadPumpData('pumpdata/Busch_2stage_He4_torqueControl_70Hz.csv')
 	  
 # calculate 1K pot temperature when pumping away a certain gas flow
 def OneKPotTemperature(HeFlow, pumpingPressureDrop):
@@ -50,10 +50,10 @@ def OneKPotTemperature(HeFlow, pumpingPressureDrop):
 #    print('Could not determine pump inlet pressure')
 #  pumpInletPressure = HeFlow*hepak.HeConst(4)*pumpInletTemperature/(pumpingSpeed/3600) # P = dm/dt R_s T / (dV/dt)
 
-  pumpInletPressure = scipy.optimize.root_scalar(lambda P: pumpData(P)/0.75 - HeFlow, bracket = (15., 12000.)) # find inlet pressure for given flow in pump data for He3 (divide by 0.75 to scale to He4)
-  if not pumpInletPressure.converged:
-    print("Could not calculate He4 pump inlet pressure!")
-  T = hepak.HeCalc('T', 0, 'P', pumpInletPressure.root + pumpingPressureDrop, 'SL', 0., 1) # T_sat(P + dP)
+  pumpInletPressure = pumpDataHe3(HeFlow) #scipy.optimize.root_scalar(lambda P: pumpDataHe4(P) - HeFlow, bracket = (1., 20000.)) # find inlet pressure for given flow in pump data
+#  if not pumpInletPressure.converged:
+#    print("Could not calculate He4 pump inlet pressure!")
+  T = hepak.HeCalc('T', 0, 'P', pumpInletPressure + pumpingPressureDrop, 'SL', 0., 1) # T_sat(P + dP)
   return T
 
 # calculate evaporation rate from 1K pot at certain temperature and He3 flow
@@ -78,6 +78,8 @@ def He3Flow(inletTemperature, inletPressure, temperature, heatLoad):
   liquidFlow = heatLoad/latentHeat
   return liquidFlow/liquidFraction
 
+pumpDataHe3 = pumpdata.loadPumpData('pumpdata/Busch_2stage_He3_torqueControl_90Hz.csv')
+	  
 # calculate He3 temperature when pumping away a certain gas flow
 # pumpingSpeed dV/dt is assumed to be in m3/h
 def He3Temperature(He3Flow, pumpingPressureDrop):
@@ -86,11 +88,11 @@ def He3Temperature(He3Flow, pumpingPressureDrop):
 #  if not inletPressure.converged:
 #    print('Could not determine pump inlet pressure')
 #  pumpInletPressure = He3Flow*specificGasConstant*pumpInletTemperature/(pumpingSpeed/3600) # P = dm/dt R_s T / (dV/dt)
-  pumpInletPressure = scipy.optimize.root_scalar(lambda P: pumpData(P)*2. - He3Flow, bracket = (15., 12000.)) # find inlet presure for given flow in pump data (using two parallel pumps)
-  if not pumpInletPressure.converged:
-    print("Could not calculate He3 pump inlet pressure!")
+  pumpInletPressure = pumpDataHe3(He3Flow) #scipy.optimize.root_scalar(lambda P: pumpDataHe3(P)*2. - He3Flow, bracket = (1., 20000.)) # find inlet presure for given flow in pump data (using two parallel pumps)
+#  if not pumpInletPressure.converged:
+#    print("Could not calculate He3 pump inlet pressure!")
 
-  return he3pak.He3SaturatedTemperature(pumpInletPressure.root + pumpingPressureDrop) # T(P + dP)
+  return he3pak.He3SaturatedTemperature(pumpInletPressure + pumpingPressureDrop) # T(P + dP)
 
 
 # calculate temperature of HEX1 by interpolating measured He3 boiling curve
@@ -98,10 +100,15 @@ He3boilingData = HEXdata.loadHe3boilingData()
 def HEX1TemperatureLow(T_He3, HEX1length, HEX1diameter, HEX1surface, heatLoad):
   if heatLoad <= 0.:
     return T_He3
+    
 #  numberFins = HEX1length/finPitch
 #  area = HEX1diameter*math.pi*HEX1length/2 + (HEX1diameter + 2*finHeight)*math.pi*HEX1length/2 + ((HEX1diameter/2 + finHeight)**2 - (HEX1diameter/2)**2)*math.pi*numberFins*2
   area = HEX1surface * HEX1length
   q = heatLoad/area
+  
+#  kG = 35
+#  h = kG/2.6 * 20 * T_He3**3 # Simple Kapitza model (1.2 to 2.6 times higher Kapitza resistance in He3 compared to He-II)
+#  return T_He3 + q/h
   
   dT = He3boilingData[0](T_He3, q)
   if math.isnan(dT):
@@ -117,7 +124,8 @@ def HEX1TemperatureHigh(T_HEX1_low, HEX1length, heatLoad):
 # calculate temperature of HeII at HEX1 from empirical Kapitza conductance
 def HeIITemperatureLow(T_Cu, HEX1length, HEX1diameter, heatLoad):
   A = HEX1diameter*math.pi*HEX1length
-  h = 900.*T_Cu**3
+  kG = 35 # 45 is default (h = 900 W/m^2/K^4)
+  h = 0.61 * kG * 20 * T_Cu**3 # use kG def (0.61 factor for Ni plating)
   return T_Cu + heatLoad/A/h
 #  return (T_Cu**3.46 + heatLoad/A/460.)**(1./3.46) # for polished/oxidized Cu, see van Sciver table 7.4
 
@@ -131,7 +139,7 @@ def HeIIlowestTemperaturePosition(beamHeating, bulbLength, channelLength, HEX1le
   return HEX1length/2.*(downstreamHeating - upstreamHeating)/(beamHeating + staticHeat + funneledHeat) # position where heat flux becomes zero (assuming constant heat flux removed along HEX1)
 
 # calculate heat flux in He-II, x is distance from center of HEX1
-def HeIIheatFlux(x, beamHeating, bulbRadius, bulbLength, channelCrossSection, channelLength, HEX1length, staticHeat, funneledHeat, funnelCrossSection, funnelLength):
+def HeIIheatFlux(x, beamHeating, bulbRadius, bulbLength, channelCrossSection, channelLength, HEX1crossSection, HEX1length, staticHeat, funneledHeat, funnelCrossSection, funnelLength):
   staticHeatLength = bulbLength + channelLength + funnelLength # total length that receives static heating
   upstreamLengthFraction = (bulbLength + channelLength)/staticHeatLength # fraction of total length upstream of HEX1 (used to calculate static heating)
   upstreamHeating = beamHeating + staticHeat*upstreamLengthFraction # total heat introduced upstream of HEX1 (beam heating + upstream fraction of static heat)
@@ -140,12 +148,12 @@ def HeIIheatFlux(x, beamHeating, bulbRadius, bulbLength, channelCrossSection, ch
   if x < -HEX1length/2. - funnelLength:
     return 0.
   elif x < -HEX1length/2.:
-    crossSection = channelCrossSection - (-HEX1length/2. - x)/funnelLength*(channelCrossSection - funnelCrossSection) # cross section linearly tapers from HEX1 to funnel exit
+    crossSection = HEX1crossSection - (-HEX1length/2. - x)/funnelLength*(HEX1crossSection - funnelCrossSection) # cross section linearly tapers from HEX1 to funnel exit
     return (funneledHeat + staticHeat*(x + HEX1length/2. + funnelLength)/staticHeatLength)/crossSection # downstream of HEX1 heat flux consists of funneled heat plus static heat added along funnel
   elif x < x0:
-    return downstreamHeating*(x0 - x)/(x0 + HEX1length/2.)/channelCrossSection # along HEX1 downstream heat flux is removed at a constant rate
+    return downstreamHeating*(x0 - x)/(x0 + HEX1length/2.)/HEX1crossSection # along HEX1 downstream heat flux is removed at a constant rate
   elif x < HEX1length/2.:
-    return -upstreamHeating*(x - x0)/(HEX1length/2. - x0)/channelCrossSection # along HEX1 upstream heat flux is removed at a constant rate
+    return -upstreamHeating*(x - x0)/(HEX1length/2. - x0)/HEX1crossSection # along HEX1 upstream heat flux is removed at a constant rate
   elif x < HEX1length/2. + channelLength:
     return -(beamHeating + staticHeat*(HEX1length/2. + channelLength + bulbLength - x)/staticHeatLength)/channelCrossSection # in channel heat flux consists of beam heating plus static heat load added in channel and bulb upstream of x
   elif x < HEX1length/2. + channelLength + bulbLength:
@@ -197,10 +205,11 @@ def GorterMellink(T_low, pressure, heatFluxModel, x0, length, conductivityModel)
  
 
 # calculate temperature profile of He-II in conduction channel from Gorter-Mellink equation
-def HeIItemperatureHigh(channelLength, HEX1length, T_low, pressure, beamHeating, staticHeat, funneledHeat, channelDiameter):
+def HeIItemperatureHigh(channelLength, HEX1length, T_low, pressure, beamHeating, staticHeat, funneledHeat, channelDiameter, HEX1diameter):
   x0 = HeIIlowestTemperaturePosition(beamHeating, 0.4, channelLength, HEX1length, staticHeat, funneledHeat, 0.5)
   crossSection = channelDiameter**2/4.*math.pi
-  heatFluxModel = lambda x: HeIIheatFlux(x, beamHeating, 0.18, 0.386, crossSection, channelLength, HEX1length, staticHeat, funneledHeat, crossSection, 0.25)
+  HEX1crossSection = HEX1diameter**2/4.*math.pi
+  heatFluxModel = lambda x: HeIIheatFlux(x, beamHeating, 0.18, 0.386, crossSection, channelLength, HEX1crossSection, HEX1length, staticHeat, funneledHeat, crossSection, 0.25)
   profileHEPAK = GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, 'HEPAK')
   profileVanSciver = GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, 'VanSciver')
   
@@ -220,7 +229,7 @@ def equationSet(x, parameters):
 								                   parameters['He reservoir pressure'], parameters['HEX5 exit temperature'], parameters['1K pot static load'], x[1])
   T_1Kpot = OneKPotTemperature(OneKPotFlow, parameters['He pressure drop'])
 
-  T_HEX1_low = HEX1TemperatureLow(T_He3, parameters['HEX1 length'], parameters['Channel diameter'], parameters['HEX1 surface'], heatLoad)
+  T_HEX1_low = HEX1TemperatureLow(T_He3, parameters['HEX1 length'], parameters['HEX1 diameter'], parameters['HEX1 surface'], heatLoad)
   T_HEX1_high = HEX1TemperatureHigh(T_HEX1_low, parameters['HEX1 length'], heatLoad)
   T_HeII_low = HeIITemperatureLow(T_HEX1_high, parameters['HEX1 length'], parameters['Channel diameter'], heatLoad)
   
@@ -250,7 +259,7 @@ def calcUCNSource(parameters):
  
   result['T_3He'] = He3Temperature(result['3He flow'], parameters['3He pressure drop'])
   heatLoad = parameters['Beam heating'] + parameters['He-II static heat'] + parameters['He-II funnel heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], result['1K pot temperature'], result['T_HeII_low'])
-  result['T_HEX1_low'] = HEX1TemperatureLow(result['T_3He'], parameters['HEX1 length'], parameters['Channel diameter'], parameters['HEX1 surface'], heatLoad)
+  result['T_HEX1_low'] = HEX1TemperatureLow(result['T_3He'], parameters['HEX1 length'], parameters['HEX1 diameter'], parameters['HEX1 surface'], heatLoad)
   result['T_HEX1_high'] = HEX1TemperatureHigh(result['T_HEX1_low'], parameters['HEX1 length'], heatLoad)
 
   result['HeII vapor pressure'] = 0.
@@ -260,7 +269,7 @@ def calcUCNSource(parameters):
     result['HeII vapor pressure'] = hepak.HeCalc('P', 0, 'T', result['T_HeII_low'], 'SL', 0., 1)
     result['HeII pressure head'] = hepak.HeCalc('D', 0, 'T', result['T_HeII_low'], 'SL', 0., 1)*9.81*parameters['HeII overfill']
     result['T_HeII_high'] = HeIItemperatureHigh(parameters['Channel length'], parameters['HEX1 length'], result['T_HeII_low'], result['HeII vapor pressure'] + result['HeII pressure head'], \
-                                                parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], parameters['Channel diameter'])
+                                                parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], parameters['Channel diameter'], parameters['HEX1 diameter'])
 
   return result
 

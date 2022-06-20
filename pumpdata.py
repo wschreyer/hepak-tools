@@ -6,10 +6,22 @@ import matplotlib.ticker
 import hepak
 import he3pak
 
-def plotPumpData(Pdata, flowData):
+def openPumpData(filename):
+  Pdata = []
+  flowData = []
+  with open(filename) as csvfile:
+    csvreader = csv.reader(csvfile, delimiter = ',')
+    for line in csvreader:
+      Pdata.append(float(line[0])*133.322) # pressure data is in torr
+      flowData.append(float(line[1])/1000.) # flow data is in g/s
+  return Pdata, flowData  
+
+def plotPumpData(filenames):
   fig, ax = plt.subplots(constrained_layout = True)
-  ax.plot(Pdata, numpy.multiply(flowData, 1000.*2.), label = '3He')
-  ax.plot(Pdata, numpy.multiply(flowData, 1000./0.75), label = '4He')
+  for filename in filenames:
+    Pdata, flowData = openPumpData(filename)
+    ax.plot(Pdata, numpy.multiply(flowData, 1000), label = filename)
+    
   ax.grid(which = 'both')
   ax.set_xscale('log')
   #ax.set_yscale('log')
@@ -33,13 +45,6 @@ def plotPumpData(Pdata, flowData):
 
 # load pumping curves of Busch 2-stage system
 def loadPumpData(filename):
-  Pdata = []
-  flowData = []
-  with open(filename) as csvfile:
-    csvreader = csv.reader(csvfile, delimiter = ',')
-    for line in csvreader:
-      Pdata.append(float(line[0])*133.322) # pressure data is in torr
-      flowData.append(float(line[1])/1000.) # flow data is in g/s
-#  plotPumpData(Pdata, flowData)
-  return scipy.interpolate.interp1d(Pdata, flowData)
+  Pdata, flowData = openPumpData(filename)
+  return scipy.interpolate.interp1d(flowData, Pdata, fill_value = 'extrapolate')
   
