@@ -6,7 +6,7 @@ parameters = {
 'Beam heating':                   {'value': 8.1,         'range': (0., 10.),        'unit': 'W'}, # Beam on
 #'Beam heating':                   {'value': 0.05,          'range': (0.05, 0.05),         'unit': 'W'}, # Beam off
 'He-II static heat':   	          {'value': 0.25,        'range': (0., 1.),         'unit': 'W'},
-'He-II funnel heat':              {'value': 1.,          'range': (0.5, 2.),        'unit': 'W'},
+'He-II funnel heat':              {'value': 1.25,        'range': (0.5, 2.),        'unit': 'W'},
 #'3He pumping speed':              {'value': 4300.,       'range': (300., 10000.),   'unit': r'm$^{3}$/h'}, # 1.14g/s @ 5.85 torr (Busch proposal)
 #'He pumping speed':	             {'value': 2000.,       'range': (500., 5000.),    'unit': r'm$^{3}$/h'}, # 1.2g/s @ 9.9 torr (Busch proposal)
 #'Pump inlet temperature':         {'value': 290.,      	'range': (100., 300.), 	   'unit': 'K'},
@@ -20,12 +20,14 @@ parameters = {
 'HEX4 exit temperature':          {'value': 2.8,         'range': (2.5, 4.),	      'unit': 'K'},
 'HEX5 exit temperature':          {'value': 2.8,         'range': (2.5, 4.),        'unit': 'K'},
 #'1K pot inlet temperature':       {'value': 2.8,         'range': (2., 3.5),        'unit': 'K'},
-'3He inlet pressure':             {'value': 50000.,      'range': (30000., 80000.), 'unit': 'Pa'},
+'3He inlet pressure':             {'value': 30000.,      'range': (10000., 60000.), 'unit': 'Pa'},
 'Channel diameter':               {'value': 0.148,       'range': (0.12, 0.2),      'unit': 'm'},
-'Channel length':                 {'value': 2.5,         'range': (1., 4.),         'unit': 'm'},
-'HEX1 diameter':                  {'value': 0.148,       'range': (0.12, 0.2),      'unit': 'm'},
-'HEX1 length': 	                  {'value': 0.6,         'range': (0.1, 0.8),       'unit': 'm'},
-'HEX1 surface':                   {'value': 1.67,        'range': (0.21, 2.),       'unit': r'm$^{2}$/m'},
+'Channel length':                 {'value': 2.356,       'range': (1., 4.),         'unit': 'm'},
+'HEX1 diameter':                  {'value': 0.1482,      'range': (0.12, 0.2),      'unit': 'm'},
+'HEX1 length': 	                  {'value': 0.614,       'range': (0.1, 0.8),       'unit': 'm'},
+'HEX1 3He surface':               {'value': 1.399,       'range': (0.2, 2.),        'unit': r'm$^{2}$/m'},
+'HEX1 conductivity':              {'value': 9.6/0.07/0.6,'range': (100., 300.),     'unit': 'W/m K'}, # based on FEMM simulation we get 0.07K temperature difference across HEX1 with 9.6W heat load and 0.6m length
+'HEX1 Kapitza kG':                {'value': 35*0.61,     'range': (10., 45.),       'unit': ''}, # Kapitza resistance factor, according to VanSciver 45 is typical (h = 900 W/m^2/K^4)
 'HeII overfill':                  {'value': 0.05,        'range': (0.02, 0.2),      'unit': 'm'},
 'He reservoir pressure':          {'value': 1.2e5,       'range': (700e2, 1300e2),  'unit': 'Pa'},
 'Isopure He flow':                {'value': 0.,          'range': (0., 0.),         'unit': 'kg/s'},
@@ -34,6 +36,27 @@ parameters = {
 '20K shield temperature':         {'value': 20.,         'range': (15., 40.),       'unit': 'K'},
 '100K shield temperature':        {'value': 100.,        'range': (80., 150.),      'unit': 'K'},
 }
+
+
+tempParameters = {i: parameters[i]['value'] for i in parameters}
+res = UCNsource.calcUCNSource(tempParameters)
+for p in parameters:
+  print('{0}: {1:.4g} {2}'.format(p, parameters[p]['value'], parameters[p]['unit']))
+for r in res:
+  if 'temperature' in r or 'T' in r:
+    unit = 'K'
+  elif 'pressure' in r:
+    unit = 'Pa'
+  elif 'flow' in r:
+    unit = 'kg/s'
+  elif 'consumption' in r:
+    unit = 'L/h'
+  else:
+    unit = '?'
+  if isinstance(res[r], float):
+    print('{0}: {1:.4g} {2}'.format(r, res[r], unit))
+  else:
+    print('{0}: {1[0]:.4g}-{1[1]:.4g} {2}'.format(r, res[r], unit))
 
 # scan parameter ranges and plot temperatures and flows
 plotRows = 4

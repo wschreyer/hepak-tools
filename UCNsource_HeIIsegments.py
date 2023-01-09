@@ -145,7 +145,7 @@ parameters = {
 'Channel length':                 2.356,
 'HEX1 diameter':                  0.148,
 'HEX1 length':                    0.6,
-'HEX1 surface':                   1.67,
+'HEX1 surface':                   1.43,
 'HeII overfill':                  0.05,
 'He reservoir pressure':          1.2e5,
 'Isopure He flow':                0.,
@@ -166,28 +166,27 @@ parameters = {
 #  yoshikiParameter = 0.008
 #  T_low = result['T_HeII_low']
 
-for T_low, conductivityModel, yoshikiParameter in zip([0.8, 1.0, 1.1, 1.2, 0.8, 1.0, 1.1, 1.2, 0.8, 1.0, 1.1, 1.2, 0.8, 1.0, 1.1, 1.2],
-                                                      ['VanSciver', 'VanSciver', 'VanSciver', 'VanSciver', 'HEPAK', 'HEPAK', 'HEPAK', 'HEPAK', 'VanSciver', 'VanSciver', 'VanSciver', 'VanSciver', 'HEPAK', 'HEPAK', 'HEPAK', 'HEPAK'],
-                                                      [0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.008, 0.016, 0.016, 0.016, 0.016, 0.016, 0.016, 0.016, 0.016]):
-  
-  vaporPressure = hepak.HeCalc('P', 0, 'T', T_low, 'SV', 0, 1)
-  liquidPressure = vaporPressure + hepak.HeCalc('D', 0, 'T', T_low, 'SL', 0., 1)*9.81*parameters['HeII overfill']
-  
-#  simpleProfile = simpleHeatFluxModel(T_low, liquidPressure, beamHeating, parameters['Channel diameter'], parameters['Channel length'], conductivityModel)
-#  liquidPotentials = segmentedLiquidTemperature(lambda x: simpleProfile(x) if x > 0. else simpleProfile(simpleProfile.t_min), liquidPressure, liquidSegmentation, '{0:.2f}W'.format(heatLoad), conductivityModel, yoshikiParameter)
-  refinedProfileUpstream, refinedProfileDownstream = refinedHeatFluxModel(T_low, liquidPressure, parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], 0.386, 0.36, parameters['Channel length'], parameters['Channel diameter'], parameters['HEX1 length'], parameters['HEX1 diameter'], 0.283, 0.0955, conductivityModel)
-  liquidPotentials = segmentedLiquidTemperature(lambda x: refinedProfileUpstream(x) if x >= refinedProfileUpstream.t_min else refinedProfileDownstream(x), \
-                                                liquidPressure, liquidSegmentation, parameters['Channel diameter'], parameters['HEX1 diameter'], parameters['HEX1 length'], yoshikiParameter, T_low, conductivityModel)
-
-  vaporPotentials = segmentedVaporTemperature(T_low, roomTemperature, vaporLengths)
-
-  print('# T_low {0:.3f}K, {1}, heat load {2:.3f}+{3:.3f}+{4:.3f}W, B {5:.3f}/sK^7'.format(T_low, conductivityModel, parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], yoshikiParameter))
-  T_high = refinedProfileUpstream(refinedProfileUpstream.t_max)[0]
-  print('# resulting T_high {0:.3f}K'.format(T_high))
-  for i, W in enumerate(liquidPotentials):
-    print('LHe{0}   {1[0]:.3g}     {1[1]:.3g}     0 0 0 0'.format(i, W))
-
-  for i, W in enumerate(vaporPotentials):
-    print('He{0}  {1[0]:.3g}     {1[1]:.3g}   0 0 0 0'.format(i, W))
-  print('HeRT    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(hepak.HeCalc('D', 0, 'P', vaporPressure, 'T', roomTemperature, 1)), imaginaryFermiPotential(vaporLifetime(roomTemperature, vaporPressure))))
-  print('\n\n')
+for T_low in [0.8, 1.0, 1.05, 1.1, 1.15, 1.2]:
+  for conductivityModel in ['VanSciver', 'HEPAK']:
+    for yoshikiParameter in [0.008, 0.016]:
+      vaporPressure = hepak.HeCalc('P', 0, 'T', T_low, 'SV', 0, 1)
+      liquidPressure = vaporPressure + hepak.HeCalc('D', 0, 'T', T_low, 'SL', 0., 1)*9.81*parameters['HeII overfill']
+      
+#      simpleProfile = simpleHeatFluxModel(T_low, liquidPressure, beamHeating, parameters['Channel diameter'], parameters['Channel length'], conductivityModel)
+#      liquidPotentials = segmentedLiquidTemperature(lambda x: simpleProfile(x) if x > 0. else simpleProfile(simpleProfile.t_min), liquidPressure, liquidSegmentation, '{0:.2f}W'.format(heatLoad), conductivityModel, yoshikiParameter)
+      refinedProfileUpstream, refinedProfileDownstream = refinedHeatFluxModel(T_low, liquidPressure, parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], 0.386, 0.36, parameters['Channel length'], parameters['Channel diameter'], parameters['HEX1 length'], parameters['HEX1 diameter'], 0.283, 0.0955, conductivityModel)
+      liquidPotentials = segmentedLiquidTemperature(lambda x: refinedProfileUpstream(x) if x >= refinedProfileUpstream.t_min else refinedProfileDownstream(x), \
+                                                    liquidPressure, liquidSegmentation, parameters['Channel diameter'], parameters['HEX1 diameter'], parameters['HEX1 length'], yoshikiParameter, T_low, conductivityModel)
+     
+      vaporPotentials = segmentedVaporTemperature(T_low, roomTemperature, vaporLengths)
+     
+      print('# T_low {0:.3f}K, {1}, heat load {2:.3f}+{3:.3f}+{4:.3f}W, B {5:.3f}/sK^7'.format(T_low, conductivityModel, parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], yoshikiParameter))
+      T_high = refinedProfileUpstream(refinedProfileUpstream.t_max)[0]
+      print('# resulting T_high {0:.3f}K'.format(T_high))
+      for i, W in enumerate(liquidPotentials):
+        print('LHe{0}   {1[0]:.3g}     {1[1]:.3g}     0 0 0 0'.format(i, W))
+     
+      for i, W in enumerate(vaporPotentials):
+        print('He{0}  {1[0]:.3g}     {1[1]:.3g}   0 0 0 0'.format(i, W))
+      print('HeRT    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(hepak.HeCalc('D', 0, 'P', vaporPressure, 'T', roomTemperature, 1)), imaginaryFermiPotential(vaporLifetime(roomTemperature, vaporPressure))))
+      print('\n\n')

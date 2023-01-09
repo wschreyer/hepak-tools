@@ -117,15 +117,13 @@ def HEX1TemperatureLow(T_He3, HEX1length, HEX1diameter, HEX1surface, heatLoad):
   return T_He3 + dT
 
 # Calculate temperature gradient across copper of HEX1 (based on 2D simulation with FEMM)
-def HEX1TemperatureHigh(T_HEX1_low, HEX1length, heatLoad):
-  conductivityFactor = 0.013/10.*0.6 # from FEMM simulation: 13 mK difference between average temperatures at flat top and 150mm ID, at 10W, 0.6m long, 400 W/m/K conductivity
-  return T_HEX1_low + conductivityFactor*heatLoad/HEX1length # temperature difference is proportional to heat load, indirectly proportional to length
+def HEX1TemperatureHigh(T_HEX1_low, HEX1length, HEX1conductivity, heatLoad):
+  return T_HEX1_low + heatLoad/HEX1conductivity/HEX1length  # temperature difference is proportional to heat load, indirectly proportional to length
   
 # calculate temperature of HeII at HEX1 from empirical Kapitza conductance
-def HeIITemperatureLow(T_Cu, HEX1length, HEX1diameter, heatLoad):
+def HeIITemperatureLow(T_Cu, HEX1length, HEX1diameter, heatLoad, KapitzaKG):
   A = HEX1diameter*math.pi*HEX1length
-  kG = 35 # 45 is default (h = 900 W/m^2/K^4)
-  h = 0.61 * kG * 20 * T_Cu**3 # use kG def (0.61 factor for Ni plating)
+  h = KapitzaKG * 20 * T_Cu**3 # use kG def (0.61 factor for Ni plating)
   return T_Cu + heatLoad/A/h
 #  return (T_Cu**3.46 + heatLoad/A/460.)**(1./3.46) # for polished/oxidized Cu, see van Sciver table 7.4
 
@@ -213,7 +211,7 @@ def HeIItemperatureHigh(channelLength, HEX1length, T_low, pressure, beamHeating,
   profileHEPAK = GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, 'HEPAK')
   profileVanSciver = GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, 'VanSciver')
   
-  return profileHEPAK(channelLength)[0], profileVanSciver(channelLength)[0]
+  return profileVanSciver(channelLength)[0], profileHEPAK(channelLength)[0]
 
 
 # x: [3He flow, 1K pot temperature, 4He temperature at HEX1]
@@ -229,9 +227,9 @@ def equationSet(x, parameters):
 								                   parameters['He reservoir pressure'], parameters['HEX5 exit temperature'], parameters['1K pot static load'], x[1])
   T_1Kpot = OneKPotTemperature(OneKPotFlow, parameters['He pressure drop'])
 
-  T_HEX1_low = HEX1TemperatureLow(T_He3, parameters['HEX1 length'], parameters['HEX1 diameter'], parameters['HEX1 surface'], heatLoad)
-  T_HEX1_high = HEX1TemperatureHigh(T_HEX1_low, parameters['HEX1 length'], heatLoad)
-  T_HeII_low = HeIITemperatureLow(T_HEX1_high, parameters['HEX1 length'], parameters['Channel diameter'], heatLoad)
+  T_HEX1_low = HEX1TemperatureLow(T_He3, parameters['HEX1 length'], parameters['HEX1 diameter'], parameters['HEX1 3He surface'], heatLoad)
+  T_HEX1_high = HEX1TemperatureHigh(T_HEX1_low, parameters['HEX1 length'], parameters['HEX1 conductivity'], heatLoad)
+  T_HeII_low = HeIITemperatureLow(T_HEX1_high, parameters['HEX1 length'], parameters['Channel diameter'], heatLoad, parameters['HEX1 Kapitza kG'])
   
   return [flow - x[0], T_1Kpot - x[1], T_HeII_low - x[2]]
   
@@ -258,9 +256,11 @@ def calcUCNSource(parameters):
   result['Shield consumption'] = max(result['20K shield flow'], result['100K shield flow'])/hepak.HeCalc('D', 0, 'P', 1013e2, 'SL', 0., 1)*1000*3600
  
   result['T_3He'] = He3Temperature(result['3He flow'], parameters['3He pressure drop'])
+  result['3He vapor pressure'] = he3pak.He3SaturatedVaporProp(2, result['T_3He'])
   heatLoad = parameters['Beam heating'] + parameters['He-II static heat'] + parameters['He-II funnel heat'] + HeCoolingLoad(parameters['Isopure He flow'], parameters['Isopure He pressure'], result['1K pot temperature'], result['T_HeII_low'])
-  result['T_HEX1_low'] = HEX1TemperatureLow(result['T_3He'], parameters['HEX1 length'], parameters['HEX1 diameter'], parameters['HEX1 surface'], heatLoad)
-  result['T_HEX1_high'] = HEX1TemperatureHigh(result['T_HEX1_low'], parameters['HEX1 length'], heatLoad)
+  result['He3 liquid fraction'] = heatLoad/result['3He flow']/he3pak.He3SaturatedLiquidProp(13, result['T_3He'])
+  result['T_HEX1_low'] = HEX1TemperatureLow(result['T_3He'], parameters['HEX1 length'], parameters['HEX1 diameter'], parameters['HEX1 3He surface'], heatLoad)
+  result['T_HEX1_high'] = HEX1TemperatureHigh(result['T_HEX1_low'], parameters['HEX1 length'], parameters['HEX1 conductivity'], heatLoad)
 
   result['HeII vapor pressure'] = 0.
   result['HeII pressure head'] = 0.
