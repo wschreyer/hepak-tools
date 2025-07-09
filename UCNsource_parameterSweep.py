@@ -28,7 +28,7 @@ parameters = {
 'HEX1 3He surface':               {'value': 1.399,       'range': (0.2, 2.),        'unit': r'm$^{2}$/m'},
 'HEX1 conductivity':              {'value': 9.6/0.07/0.6,'range': (100., 300.),     'unit': 'W/m K'}, # based on FEMM simulation we get 0.07K temperature difference across HEX1 with 9.6W heat load and 0.6m length
 'HEX1 Kapitza kG':                {'value': 35*0.61,     'range': (10., 45.),       'unit': ''}, # Kapitza resistance factor, according to VanSciver 45 is typical (h = 900 W/m^2/K^4)
-'HeII overfill':                  {'value': 0.05,        'range': (0.02, 0.2),      'unit': 'm'},
+'HeII fill level':                {'value': 0.389,       'range': (0.24, 0.40),     'unit': 'm'},
 'He reservoir pressure':          {'value': 1.2e5,       'range': (700e2, 1300e2),  'unit': 'Pa'},
 'Isopure He flow':                {'value': 0.,          'range': (0., 0.),         'unit': 'kg/s'},
 #'Isopure He flow':                {'value': 0.00014/2,   'range': (0., 0.00014),     'unit': 'kg/s'}, # isopure condensation

@@ -66,12 +66,12 @@ def simpleHeatFluxModel(T_low, pressure, heatLoad, channelDiameter, channelLengt
 
   return UCNsource.GorterMellink(T_low, pressure, heatFluxModel, 0., channelLength, conductivityModel)
 
-def refinedHeatFluxModel(T_low, pressure, beamHeating, staticHeat, funneledHeat, bulbLength, bulbDiameter, channelLength, channelDiameter, HEX1length, HEX1diameter, funnelLength, funnelDiameter, conductivityModel):
-  x0 = UCNsource.HeIIlowestTemperaturePosition(beamHeating, bulbLength, channelLength, HEX1length, staticHeat, funneledHeat, funnelLength)
-  heatFluxModel = lambda x: UCNsource.HeIIheatFlux(x, beamHeating, bulbDiameter/2., bulbLength, channelDiameter**2/4.*math.pi, channelLength, HEX1diameter**2/4.*math.pi, HEX1length, staticHeat, funneledHeat, funnelDiameter**2/4.*math.pi, funnelLength)
+def refinedHeatFluxModel(T_low, pressure, beamHeating, staticHeat, funneledHeat, bulbLength, bulbDiameter, bulbChannelOffset, channelLength, channelDiameter, HEX1length, HEX1diameter, funnelDiameter, HeIIfillLevel, conductivityModel):
+  x0 = UCNsource.HeIIlowestTemperaturePosition(HEX1length, beamHeating, staticHeat, funneledHeat)
+  heatFluxModel = lambda x: UCNsource.HeIIheatFlux(x, beamHeating, bulbDiameter/2., bulbLength, bulbChannelOffset, channelDiameter, channelLength, HEX1diameter, HEX1length, staticHeat, funneledHeat, funnelDiameter, HeIIfillLevel)
 
   fig, ax = plt.subplots()
-  xdata = numpy.linspace(-funnelLength - HEX1length/2., HEX1length/2. + channelLength + bulbLength, 100)
+  xdata = numpy.linspace(-0.3 - HEX1length/2., HEX1length/2. + channelLength + bulbLength, 100)
   ax.plot(xdata, [heatFluxModel(x) for x in xdata])
   ax.set_xlabel('Distance from HEX1 center (m)')
   ax.set_ylabel('Heat flux in He-II (W/m2)')
@@ -81,7 +81,7 @@ def refinedHeatFluxModel(T_low, pressure, beamHeating, staticHeat, funneledHeat,
   plt.savefig(filename + '.pdf')
 
   profileUpstream = UCNsource.GorterMellink(T_low, pressure, heatFluxModel, x0, HEX1length/2. + channelLength + bulbLength, conductivityModel)
-  profileDownstream = UCNsource.GorterMellink(T_low, pressure, heatFluxModel, x0, -HEX1length/2. - funnelLength, conductivityModel)
+  profileDownstream = UCNsource.GorterMellink(T_low, pressure, heatFluxModel, x0, -HEX1length/2. - 0.3, conductivityModel)
   return profileUpstream, profileDownstream
 
 def segmentedLiquidTemperature(temperatureProfile, pressure, segmentation, channelDiameter, HEX1diameter, HEX1length, YoshikiParameter, T_low, conductivityModel):
@@ -146,7 +146,7 @@ parameters = {
 'HEX1 diameter':                  0.148,
 'HEX1 length':                    0.6,
 'HEX1 surface':                   1.43,
-'HeII overfill':                  0.05,
+'HeII fill level':                0.27,
 'He reservoir pressure':          1.2e5,
 'Isopure He flow':                0.,
 #'Isopure He flow':                0.00014/3, # isopure condensation
@@ -170,11 +170,11 @@ for T_low in [0.8, 1.0, 1.05, 1.1, 1.15, 1.2]:
   for conductivityModel in ['VanSciver', 'HEPAK']:
     for yoshikiParameter in [0.008, 0.016]:
       vaporPressure = hepak.HeCalc('P', 0, 'T', T_low, 'SV', 0, 1)
-      liquidPressure = vaporPressure + hepak.HeCalc('D', 0, 'T', T_low, 'SL', 0., 1)*9.81*parameters['HeII overfill']
+      liquidPressure = vaporPressure + hepak.HeCalc('D', 0, 'T', T_low, 'SL', 0., 1)*9.81*parameters['HeII fill level']/2
       
 #      simpleProfile = simpleHeatFluxModel(T_low, liquidPressure, beamHeating, parameters['Channel diameter'], parameters['Channel length'], conductivityModel)
 #      liquidPotentials = segmentedLiquidTemperature(lambda x: simpleProfile(x) if x > 0. else simpleProfile(simpleProfile.t_min), liquidPressure, liquidSegmentation, '{0:.2f}W'.format(heatLoad), conductivityModel, yoshikiParameter)
-      refinedProfileUpstream, refinedProfileDownstream = refinedHeatFluxModel(T_low, liquidPressure, parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], 0.386, 0.36, parameters['Channel length'], parameters['Channel diameter'], parameters['HEX1 length'], parameters['HEX1 diameter'], 0.283, 0.0955, conductivityModel)
+      refinedProfileUpstream, refinedProfileDownstream = refinedHeatFluxModel(T_low, liquidPressure, parameters['Beam heating'], parameters['He-II static heat'], parameters['He-II funnel heat'], 0.386, 0.36, 0.085, parameters['Channel length'], parameters['Channel diameter'], parameters['HEX1 length'], parameters['HEX1 diameter'], 0.0955, parameters['HeII fill level'], conductivityModel)
       liquidPotentials = segmentedLiquidTemperature(lambda x: refinedProfileUpstream(x) if x >= refinedProfileUpstream.t_min else refinedProfileDownstream(x), \
                                                     liquidPressure, liquidSegmentation, parameters['Channel diameter'], parameters['HEX1 diameter'], parameters['HEX1 length'], yoshikiParameter, T_low, conductivityModel)
      
