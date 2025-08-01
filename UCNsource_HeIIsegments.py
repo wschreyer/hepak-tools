@@ -17,9 +17,7 @@ JpereV = 1.602176634e-19 # J/eV
 def liquidLifetime(T, YoshikiParameter):
   return 1./(YoshikiParameter*T**7)
 
-def vaporLifetime(temperature, pressure):
-  density = hepak.HeCalc('D', 0, 'T', temperature, 'P', pressure, 1)
-
+def vaporLifetime(temperature, density):
   freeCrossSection = HeBoundCrossSection/(1 + m_n/massHe)**2
   # upscattering cross section = "free" cross section * average He atom velocity / neutron velocity
   # see https://doi.org/10.1103/PhysRevC.92.065501
@@ -42,7 +40,7 @@ def segmentedVaporTemperature(T_low, T_high, lengths):
     x2 = x + length
     meanDensity = scipy.integrate.quad(lambda y: hepak.HeCalc('D', 0, 'T', T_low + y*dTdx, 'P', pressure, 1), x, x2)[0]/length
     meanTemperature = T_low + (dTdx*x2 + dTdx*x)/2.
-    meanLifetime = scipy.integrate.quad(lambda y: vaporLifetime(T_low + dTdx*y, pressure), x, x2)[0]/length
+    meanLifetime = scipy.integrate.quad(lambda y: vaporLifetime(T_low + dTdx*y, hepak.HeCalc('D', 0, 'T', T_low + y*dTdx, 'P' pressure, 1), x, x2)[0]/length
     fermiImag = imaginaryFermiPotential(meanLifetime)
     fermiPotentials.append( (realFermiPotential(meanDensity), fermiImag) )
 #    print('{0:.2f}m: {1:.3f}K, {2:.1f}s'.format(x + length/2., meanTemperature, meanLifetime))
@@ -188,5 +186,7 @@ for T_low in [0.8, 1.0, 1.05, 1.1, 1.15, 1.2]:
      
       for i, W in enumerate(vaporPotentials):
         print('He{0}  {1[0]:.3g}     {1[1]:.3g}   0 0 0 0'.format(i, W))
-      print('HeRT    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(hepak.HeCalc('D', 0, 'P', vaporPressure, 'T', roomTemperature, 1)), imaginaryFermiPotential(vaporLifetime(roomTemperature, vaporPressure))))
+      
+      RTdensity = hepak.HeCalc('D', 0, 'T', roomTemperature, 'P', vaporPressure, 1)
+      print('HeRT    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(RTdensity)), imaginaryFermiPotential(vaporLifetime(roomTemperature, RTdensity))))
       print('\n\n')
