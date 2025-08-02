@@ -188,5 +188,7 @@ for T_low in [0.8, 1.0, 1.05, 1.1, 1.15, 1.2]:
         print('He{0}  {1[0]:.3g}     {1[1]:.3g}   0 0 0 0'.format(i, W))
       
       RTdensity = hepak.HeCalc('D', 0, 'T', roomTemperature, 'P', vaporPressure, 1)
-      print('HeRT    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(RTdensity)), imaginaryFermiPotential(vaporLifetime(roomTemperature, RTdensity)))
+      print('HeRT    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(RTdensity), imaginaryFermiPotential(vaporLifetime(roomTemperature, RTdensity))))
+      SVdensity = hepak.HeCalc('D', 0, 'T', T_low, 'SV', 0, 1)
+      print('HeSV    {0:.3g}      {1:.3g}      0 0 0 0'.format(realFermiPotential(SVdensity), imaginaryFermiPotential(vaporLifetime(T_low, SVdensity))))
       print('\n\n')
